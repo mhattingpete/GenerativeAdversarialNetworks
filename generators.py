@@ -13,14 +13,29 @@ class Generator(nn.Module):
 		return self.layers(x)
 
 class ConvGenerator(nn.Module):
-	def __init__(self,hidden_sizes,activation=nn.ELU()):
+	def __init__(self,input_size,hidden_size,output_size,activation=nn.ReLU(),last_activation=nn.Tanh()):
 		super().__init__()
 		# layers
-		layers = []
-		for i in range(len(hidden_sizes)-1):
-			layers.append(nn.ConvTranspose2d(hidden_sizes[i],hidden_sizes[i+1],kernel_size=(3,3),stride=(1,1)))
-			layers.append(activation)
+		layers = [
+		nn.ConvTranspose2d(input_size,hidden_size*4,kernel_size=4,stride=1,padding=0),
+		nn.BatchNorm2d(hidden_size*4),
+		activation,
+		nn.ConvTranspose2d(hidden_size*4,hidden_size*2,kernel_size=4,stride=2,padding=1),
+		nn.BatchNorm2d(hidden_size*2),
+		activation,
+		nn.ConvTranspose2d(hidden_size*2,hidden_size,kernel_size=4,stride=2,padding=1),
+		nn.BatchNorm2d(hidden_size),
+		activation,
+		nn.ConvTranspose2d(hidden_size,output_size,kernel_size=4,stride=2,padding=3),
+		last_activation
+		]
 		self.layers = nn.Sequential(*layers)
+
+		for m in self.modules():
+			if isinstance(m,nn.ConvTranspose2d):
+				m.weight.data.normal_(0.0,0.02)
+				if m.bias is not None:
+					m.bias.data.zero_()
 
 	def forward(self,x):
 		return self.layers(x)

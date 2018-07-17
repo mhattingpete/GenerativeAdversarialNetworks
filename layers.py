@@ -7,7 +7,6 @@ class MultiLayerPerceptron(nn.Module):
 		layers = []
 		for i in range(len(hidden_sizes)-1):
 			layers.append(nn.Linear(hidden_sizes[i],hidden_sizes[i+1]))
-			#layers.append(nn.BatchNorm1d(hidden_sizes[i+1]))
 			if (i+1 == len(hidden_sizes)-1):
 				layers.append(last_activation)
 			else:

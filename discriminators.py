@@ -13,17 +13,29 @@ class Discriminator(nn.Module):
 		return self.layers(x)
 
 class ConvDiscriminator(nn.Module):
-	def __init__(self,hidden_sizes,activation=nn.ELU(),last_activation=nn.Sigmoid()):
+	def __init__(self,input_size,hidden_size,output_size,activation=nn.LeakyReLU(0.2),last_activation=nn.Sigmoid()):
 		super().__init__()
 		# layers
-		layers = []
-		for i in range(len(hidden_sizes)-1):
-			layers.append(nn.Conv2d(hidden_sizes[i],hidden_sizes[i+1],kernel_size=(3,3),stride=(1,1)))
-			if (i+1 == len(hidden_sizes)-1):
-				layers.append(last_activation)
-			else:
-				layers.append(activation)
+		layers = [
+		nn.Conv2d(input_size,hidden_size,kernel_size=4,stride=2,padding=1),
+		nn.BatchNorm2d(hidden_size),
+		activation,
+		nn.Conv2d(hidden_size,hidden_size*2,kernel_size=4,stride=2,padding=1),
+		nn.BatchNorm2d(hidden_size*2),
+		activation,
+		nn.Conv2d(hidden_size*2,hidden_size*4,kernel_size=4,stride=2,padding=0),
+		nn.BatchNorm2d(hidden_size*4),
+		activation,
+		nn.Conv2d(hidden_size*4,output_size,kernel_size=2,stride=1,padding=0),
+		last_activation
+		]
 		self.layers = nn.Sequential(*layers)
+
+		for m in self.modules():
+			if isinstance(m,nn.Conv2d):
+				m.weight.data.normal_(0.0,0.02)
+				if m.bias is not None:
+					m.bias.data.zero_()
 
 	def forward(self,x):
 		return self.layers(x)
