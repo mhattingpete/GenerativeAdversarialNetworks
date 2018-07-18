@@ -28,6 +28,7 @@ class ConvDiscriminator(nn.Module):
 		if last_activation:
 			layers.append(last_activation)
 		self.layers = nn.Sequential(*layers)
+		self.output_size = output_size
 
 		for m in self.modules():
 			if isinstance(m,nn.Conv2d):
@@ -36,4 +37,4 @@ class ConvDiscriminator(nn.Module):
 					m.bias.data.zero_()
 
 	def forward(self,x):
-		return self.layers(x)
+		return self.layers(x).view(-1,self.output_size)
