@@ -128,22 +128,23 @@ if __name__ == '__main__':
 				del noise_tensor
 
 				# Display Progress every few epochs
-				if epoch % 50 == 0:
-					print("Processed {} out of {} epochs".format(epoch,num_epochs))
-					print("d_error: {} \t\t g_error: {}".format(d_error.item(),g_error))
-					test_images = vec2img(generator(test_noise),image_size)
-					test_images = test_images.data
-					canvas = np.zeros((image_size*m,image_size*m))
-					q = 0
-					for i in range(m):
-						for j in range(m):
-							canvas[i*image_size:(i+1)*image_size,j*image_size:(j+1)*image_size] = test_images[q]
-							q += 1
-					plt.figure(figsize=(10,10))
-					plt.imshow(canvas,cmap='gray')
-					plt.axis("off")
-					dis.save("Figures/DCGAN-MNIST-Epoch="+str(epoch)+".pkl")
-					plt.savefig("Figures/DCGAN-MNIST-Epoch="+str(epoch)+".png")
+				if global_step % 50  == 0:
+					if epoch % 50 == 0:
+						print("Processed {} out of {} epochs".format(epoch,num_epochs))
+						print("d_error: {} \t\t g_error: {}".format(d_error.item(),g_error))
+						test_images = vec2img(generator(test_noise),image_size)
+						test_images = test_images.data
+						canvas = np.zeros((image_size*m,image_size*m))
+						q = 0
+						for i in range(m):
+							for j in range(m):
+								canvas[i*image_size:(i+1)*image_size,j*image_size:(j+1)*image_size] = test_images[q]
+								q += 1
+						plt.figure(figsize=(10,10))
+						plt.imshow(canvas,cmap='gray')
+						plt.axis("off")
+						dis.save("Figures/DCGAN-MNIST-Epoch="+str(epoch)+".pkl")
+						plt.savefig("Figures/DCGAN-MNIST-Epoch="+str(epoch)+".png")
 			epoch += 1
 	except:
 		test_images = vec2img(generator(test_noise),image_size)
