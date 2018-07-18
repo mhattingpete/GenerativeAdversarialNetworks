@@ -13,7 +13,7 @@ class Discriminator(nn.Module):
 		return self.layers(x)
 
 class ConvDiscriminator(nn.Module):
-	def __init__(self,input_size,hidden_size,output_size,activation=nn.LeakyReLU(0.2),last_activation=nn.Sigmoid()):
+	def __init__(self,input_size,hidden_size,output_size,activation=nn.LeakyReLU(0.2),last_activation=None):
 		super().__init__()
 		# layers
 		layers = [
@@ -23,9 +23,10 @@ class ConvDiscriminator(nn.Module):
 		activation,
 		nn.Conv2d(hidden_size*2,hidden_size*4,kernel_size=4,stride=2,padding=0),
 		activation,
-		nn.Conv2d(hidden_size*4,output_size,kernel_size=2,stride=1,padding=0),
-		last_activation
+		nn.Conv2d(hidden_size*4,output_size,kernel_size=2,stride=1,padding=0)
 		]
+		if last_activation:
+			layers.append(last_activation)
 		self.layers = nn.Sequential(*layers)
 
 		for m in self.modules():
