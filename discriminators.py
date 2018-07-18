@@ -18,13 +18,10 @@ class ConvDiscriminator(nn.Module):
 		# layers
 		layers = [
 		nn.Conv2d(input_size,hidden_size,kernel_size=4,stride=2,padding=1),
-		nn.BatchNorm2d(hidden_size),
 		activation,
 		nn.Conv2d(hidden_size,hidden_size*2,kernel_size=4,stride=2,padding=1),
-		nn.BatchNorm2d(hidden_size*2),
 		activation,
 		nn.Conv2d(hidden_size*2,hidden_size*4,kernel_size=4,stride=2,padding=0),
-		nn.BatchNorm2d(hidden_size*4),
 		activation,
 		nn.Conv2d(hidden_size*4,output_size,kernel_size=2,stride=1,padding=0),
 		last_activation
