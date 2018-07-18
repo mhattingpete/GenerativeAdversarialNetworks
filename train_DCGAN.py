@@ -129,7 +129,7 @@ if __name__ == '__main__':
 
 				# Display Progress every few epochs
 				if epoch % 50 == 0:
-					print("Processed {} out of {} epochs".format(epochs,num_epochs))
+					print("Processed {} out of {} epochs".format(epoch,num_epochs))
 					print("d_error: {} \t\t g_error: {}".format(d_error.item(),g_error))
 					test_images = vec2img(generator(test_noise),image_size)
 					test_images = test_images.data
