@@ -1,12 +1,11 @@
 import torch
 import os
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "2"
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
 import matplotlib
 import numpy as np
 import matplotlib.pyplot as plt
-%matplotlib inline
 from viz import updatable_display2
 
 import torch.nn as nn
@@ -43,7 +42,7 @@ def train_discriminator(real_data,fake_data,optimizer):
 	optimizer.zero_grad()
 
 	# 1.1 Train on Real Data
-	real_data += torch.normal(mean=torch.zeros(*real_data.shape))
+	real_data += torch.normal(mean=torch.zeros(*real_data.shape)).to(device)
 	prediction_real = discriminator(real_data).view(-1,1)
 	loss_real = loss_fun(prediction_real,true_target(N,device))
 	loss_real.backward()
