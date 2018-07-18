@@ -127,8 +127,10 @@ if __name__ == '__main__':
 				del real_data
 				del noise_tensor
 
-				# Display Progress every few batches
-				if global_step % 50 == 0:
+				# Display Progress every few epochs
+				if epoch % 50 == 0:
+					print("Processed {} out of {} epochs".format(epochs,num_epochs))
+					print("d_error: {} \t\t g_error: {}".format(d_error.item(),g_error))
 					test_images = vec2img(generator(test_noise),image_size)
 					test_images = test_images.data
 					canvas = np.zeros((image_size*m,image_size*m))
@@ -140,9 +142,8 @@ if __name__ == '__main__':
 					plt.figure(figsize=(10,10))
 					plt.imshow(canvas,cmap='gray')
 					plt.axis("off")
-					if epoch % 50 == 0:
-						dis.save("Figures/DCGAN-MNIST-Epoch="+str(epoch)+".pkl")
-						plt.savefig("Figures/DCGAN-MNIST-Epoch="+str(epoch)+".png")
+					dis.save("Figures/DCGAN-MNIST-Epoch="+str(epoch)+".pkl")
+					plt.savefig("Figures/DCGAN-MNIST-Epoch="+str(epoch)+".png")
 			epoch += 1
 	except:
 		test_images = vec2img(generator(test_noise),image_size)
