@@ -1,5 +1,6 @@
 # global imports
 from torch import nn
+import torch
 
 # local imports
 from layers import MultiLayerPerceptron
@@ -37,4 +38,45 @@ class ConvDiscriminator(nn.Module):
 					m.bias.data.zero_()
 
 	def forward(self,x):
+		return self.layers(x).view(-1,self.output_size)
+
+class CondConvDiscriminator(nn.Module):
+	def __init__(self,input_size,conditional_size,hidden_size,output_size,activation=nn.LeakyReLU(0.2),last_activation=None):
+		super().__init__()
+		# conditional layers
+		cond_layers = [
+		nn.Conv2d(conditional_size,hidden_size,kernel_size=4,stride=2,padding=1),
+		activation
+		]
+		self.cond_layers = nn.Sequential(*cond_layers)
+		# input layers
+		input_layers = [
+		nn.Conv2d(input_size,hidden_size,kernel_size=4,stride=2,padding=1),
+		activation
+		]
+		self.input_layers = nn.Sequential(*input_layers)
+
+		# concatenated input layers
+		layers = [
+		nn.Conv2d(hidden_size*2,hidden_size*2,kernel_size=4,stride=2,padding=1),
+		activation,
+		nn.Conv2d(hidden_size*2,hidden_size*4,kernel_size=4,stride=2,padding=0),
+		activation,
+		nn.Conv2d(hidden_size*4,output_size,kernel_size=2,stride=1,padding=0)
+		]
+		if last_activation:
+			layers.append(last_activation)
+		self.layers = nn.Sequential(*layers)
+		self.output_size = output_size
+
+		for m in self.modules():
+			if isinstance(m,nn.Conv2d):
+				m.weight.data.normal_(0.0,0.02)
+				if m.bias is not None:
+					m.bias.data.zero_()
+
+	def forward(self,x,conditional):
+		y = self.cond_layers(conditional)
+		x = self.input_layers(x)
+		x = torch.cat([x,y],1)
 		return self.layers(x).view(-1,self.output_size)
