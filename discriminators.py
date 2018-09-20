@@ -3,7 +3,11 @@ from torch import nn
 import torch
 
 # local imports
-from layers import MultiLayerPerceptron
+from layers import MultiLayerPerceptron,MiniBatchStd,Conv2dEqualized,LinearEqualized
+
+#######################################
+#####    Unconditional models     #####
+#######################################
 
 class Discriminator(nn.Module):
 	def __init__(self,hidden_sizes,dropout_prob=0.1,activation=nn.ELU(),last_activation=nn.Sigmoid()):
@@ -39,6 +43,72 @@ class ConvDiscriminator(nn.Module):
 
 	def forward(self,x):
 		return self.layers(x).view(-1,self.output_size)
+
+class PGDiscriminator(nn.Module):
+	def __init__(self,input_size,hidden_size,activation=nn.LeakyReLU(0.2)):
+		super().__init__()
+		# internal variables
+		self.activation = activation
+		self.input_size = input_size
+		self.block_output_size = hidden_size
+		# layers
+		block = nn.Sequential(
+			MiniBatchStd(),
+			Conv2dEqualized(hidden_size+1,hidden_size,kernel_size=3,stride=1,padding=1),
+			self.activation,
+			Conv2dEqualized(hidden_size,hidden_size,kernel_size=4,stride=1,padding=0),
+			self.activation
+		)
+		self.fromRGB = Conv2dEqualized(input_size,hidden_size,kernel_size=1,stride=1,padding=0)
+		self.layers = nn.ModuleList([block])
+		self.toOut = LinearEqualized(hidden_size,1)
+		self.avg_pool = nn.AvgPool2d(kernel_size=2)
+		self.block_ready = 0
+
+	def create_next_block(self,hidden_size):
+		self.block_ready = 1
+		self.new_fromRGB = Conv2dEqualized(self.input_size,hidden_size,kernel_size=1,stride=1,padding=0)
+		self.next_block = nn.Sequential(
+			Conv2dEqualized(hidden_size,hidden_size,kernel_size=3,stride=1,padding=1),
+			self.activation,
+			Conv2dEqualized(hidden_size,self.block_output_size,kernel_size=3,stride=1,padding=1),
+			self.activation,
+			self.avg_pool
+		)
+		self.block_output_size = hidden_size
+
+	def add_next_block(self):
+		# add next block of layers to model
+		self.block_ready = 0
+		tmp = self.layers
+		self.layers = nn.ModuleList([self.next_block])
+		self.layers.extend(tmp)
+		self.fromRGB = self.new_fromRGB
+
+	def fade_in_layer(self,x,alpha):
+		x_new = self.avg_pool(x)
+		x_new = self.fromRGB(x_new)
+		x = self.new_fromRGB(x)
+		x = self.next_block(x)
+		x = torch.add(x.mul(1.0-alpha),x_new.mul(alpha))
+		for l in self.layers:
+			x = l(x)
+		return self.toOut(x.view(x.size(0),-1))
+
+	def forward(self,x,alpha=1.0):
+		if alpha < 1.0:
+			return self.fade_in_layer(x,alpha)
+		else:
+			if self.block_ready:
+				self.add_next_block()
+			x = self.fromRGB(x)
+			for l in self.layers:
+				x = l(x)
+			return self.toOut(x.view(x.size(0),-1))
+
+#######################################
+#####     Conditional models      #####
+#######################################
 
 class CondConvDiscriminator(nn.Module):
 	def __init__(self,input_size,conditional_size,hidden_size,output_size,activation=nn.LeakyReLU(0.2),last_activation=None):
