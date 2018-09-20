@@ -27,7 +27,7 @@ class Conv2dEqualized(nn.Module):
 		super().__init__()
 		self.conv = nn.Conv2d(in_channels,out_channels,kernel_size,stride=stride,padding=padding,dilation=dilation,groups=groups,bias=bias)
 		nn.init.kaiming_normal_(self.conv.weight,a=nn.init.calculate_gain('conv2d'))
-		self.scale = (torch.mean(self.conv.weight.data**2))**0.5
+		self.scale = nn.Parameter((torch.mean(self.conv.weight.data**2))**0.5).type(torch.FloatTensor)
 		self.conv.weight.data.copy_(self.conv.weight.data/self.scale)
 		self.bias = nn.Parameter(torch.FloatTensor(out_channels).fill_(0))
 
@@ -40,7 +40,7 @@ class LinearEqualized(nn.Module):
 		super().__init__()
 		self.linear = nn.Linear(in_features,out_features,bias=bias)
 		nn.init.kaiming_normal_(self.linear.weight,a=nn.init.calculate_gain('linear'))
-		self.scale = (torch.mean(self.linear.weight.data**2))**0.5
+		self.scale = nn.Parameter((torch.mean(self.linear.weight.data**2))**0.5).type(torch.FloatTensor)
 		self.linear.weight.data.copy_(self.linear.weight.data/self.scale)
 		self.bias = nn.Parameter(torch.FloatTensor(out_features).fill_(0))
 
