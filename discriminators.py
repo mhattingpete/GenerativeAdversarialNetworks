@@ -86,10 +86,10 @@ class PGDiscriminator(nn.Module):
 		self.fromRGB = self.new_fromRGB
 
 	def fade_in_layer(self,x,alpha):
-		x_new = self.avg_pool(x)
-		x_new = self.fromRGB(x_new)
-		x = self.new_fromRGB(x)
-		x = self.next_block(x)
+		x_new = self.new_fromRGB(x)
+		x_new = self.next_block(x_new)
+		x = self.avg_pool(x)
+		x = self.fromRGB(x)
 		x = torch.add(x.mul(1.0-alpha),x_new.mul(alpha))
 		for l in self.layers:
 			x = l(x)
