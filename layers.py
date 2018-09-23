@@ -10,7 +10,8 @@ class MultiLayerPerceptron(nn.Module):
 		for i in range(len(hidden_sizes)-1):
 			layers.append(nn.Linear(hidden_sizes[i],hidden_sizes[i+1]))
 			if (i+1 == len(hidden_sizes)-1):
-				layers.append(last_activation)
+				if last_activation:
+					layers.append(last_activation)
 			else:
 				layers.append(nn.Dropout(dropout_prob))
 				layers.append(activation)
