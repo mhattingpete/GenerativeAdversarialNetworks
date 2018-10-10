@@ -53,7 +53,7 @@ class SADiscriminator(nn.Module):
 		activation,
 		nn.utils.spectral_norm(nn.Conv2d(hidden_size,hidden_size*2,kernel_size=4,stride=2,padding=1)),
 		activation,
-		SelfAttention(hidden_size),
+		SelfAttention(hidden_size*2),
 		activation,
 		nn.utils.spectral_norm(nn.Conv2d(hidden_size*2,hidden_size*4,kernel_size=4,stride=2,padding=0)),
 		activation,
