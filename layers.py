@@ -24,9 +24,9 @@ class MultiLayerPerceptron(nn.Module):
 		return self.__class__.__name__ +"(hidden_sizes = {})".format(self.hidden_sizes)
 
 class Conv2dEqualized(nn.Module):
-	def __init__(self,in_channels,out_channels,kernel_size,stride=1,padding=0,dilation=1,groups=1,bias=True):
+	def __init__(self,in_channels,out_channels,kernel_size,stride=1,padding=0,dilation=1,groups=1):
 		super().__init__()
-		self.conv = nn.Conv2d(in_channels,out_channels,kernel_size,stride=stride,padding=padding,dilation=dilation,groups=groups,bias=bias)
+		self.conv = nn.Conv2d(in_channels,out_channels,kernel_size,stride=stride,padding=padding,dilation=dilation,groups=groups,bias=False)
 		nn.init.kaiming_normal_(self.conv.weight,a=nn.init.calculate_gain('conv2d'))
 		self.scale = nn.Parameter((torch.mean(self.conv.weight.data**2))**0.5).type(torch.FloatTensor)
 		self.conv.weight.data.copy_(self.conv.weight.data/self.scale)
@@ -37,9 +37,9 @@ class Conv2dEqualized(nn.Module):
 		return x+self.bias.view(1,-1,1,1).expand_as(x)
 
 class LinearEqualized(nn.Module):
-	def __init__(self,in_features,out_features,bias=True):
+	def __init__(self,in_features,out_features):
 		super().__init__()
-		self.linear = nn.Linear(in_features,out_features,bias=bias)
+		self.linear = nn.Linear(in_features,out_features,bias=False)
 		nn.init.kaiming_normal_(self.linear.weight,a=nn.init.calculate_gain('linear'))
 		self.scale = nn.Parameter((torch.mean(self.linear.weight.data**2))**0.5).type(torch.FloatTensor)
 		self.linear.weight.data.copy_(self.linear.weight.data/self.scale)
@@ -75,3 +75,27 @@ class PixelwiseNormalization(nn.Module):
 
 	def __repr__(self):
 		return self.__class__.__name__ +"(eps = {})".format(self.eps)
+
+class SelfAttention(nn.Module):
+	def __init__(self,in_channels):
+		super().__init__()
+		self.in_channels = in_channels
+		self.C_bar = int(in_channels/8)
+		self.f = nn.Conv2d(in_channels,self.C_bar,kernel_size=1)
+		self.g = nn.Conv2d(in_channels,self.C_bar,kernel_size=1)
+		self.h = nn.Conv2d(in_channels,in_channels,kernel_size=1)
+		self.gamma = nn.Parameter(torch.FloatTensor(1).fill_(0))
+		self.softmax = nn.Softmax(dim=-1)
+
+	def forward(self,x):
+		batch_size = x.size(0)
+		x_f = self.f(x).view(batch_size,self.C_bar,-1)
+		x_g = self.g(x).view(batch_size,self.C_bar,-1)
+		x_h = self.h(x).view(batch_size,self.in_channels,-1)
+		s = torch.transpose(x_f,1,2).matmul(x_g)
+		beta = self.softmax(s)
+		o = x_h.matmul(beta).view(*x.shape)
+		return x + o.mul(self.gamma)
+
+	def __repr__(self):
+		return self.__class__.__name__ +"(in_channels = {})".format(self.in_channels)

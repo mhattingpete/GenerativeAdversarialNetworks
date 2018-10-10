@@ -3,7 +3,7 @@ from torch import nn
 import torch
 
 # local imports
-from layers import MultiLayerPerceptron,MiniBatchStd,Conv2dEqualized,LinearEqualized
+from layers import MultiLayerPerceptron,MiniBatchStd,Conv2dEqualized,LinearEqualized,SelfAttention
 
 #######################################
 #####    Unconditional models     #####
@@ -29,6 +29,35 @@ class ConvDiscriminator(nn.Module):
 		nn.Conv2d(hidden_size*2,hidden_size*4,kernel_size=4,stride=2,padding=0),
 		activation,
 		nn.Conv2d(hidden_size*4,output_size,kernel_size=2,stride=1,padding=0)
+		]
+		if last_activation:
+			layers.append(last_activation)
+		self.layers = nn.Sequential(*layers)
+		self.output_size = output_size
+
+		for m in self.modules():
+			if isinstance(m,nn.Conv2d):
+				m.weight.data.normal_(0.0,0.02)
+				if m.bias is not None:
+					m.bias.data.zero_()
+
+	def forward(self,x):
+		return self.layers(x).view(-1,self.output_size)
+
+class SADiscriminator(nn.Module):
+	def __init__(self,input_size,hidden_size,output_size,activation=nn.LeakyReLU(0.2),last_activation=None):
+		super().__init__()
+		# layers
+		layers = [
+		nn.utils.spectral_norm(nn.Conv2d(input_size,hidden_size,kernel_size=4,stride=2,padding=1)),
+		activation,
+		nn.utils.spectral_norm(nn.Conv2d(hidden_size,hidden_size*2,kernel_size=4,stride=2,padding=1)),
+		activation,
+		SelfAttention(hidden_size),
+		activation,
+		nn.utils.spectral_norm(nn.Conv2d(hidden_size*2,hidden_size*4,kernel_size=4,stride=2,padding=0)),
+		activation,
+		nn.utils.spectral_norm(nn.Conv2d(hidden_size*4,output_size,kernel_size=2,stride=1,padding=0))
 		]
 		if last_activation:
 			layers.append(last_activation)
