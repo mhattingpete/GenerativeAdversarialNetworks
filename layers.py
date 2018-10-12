@@ -112,13 +112,14 @@ class SelfAttention(nn.Module):
 		return self.__class__.__name__ +"(hidden_size = {})".format(self.hidden_size)
 
 class GumbelSoftmax(nn.Module):
-	def __init__(self):
+	def __init__(self,device):
 		super().__init__()
 		self.softmax = nn.Softmax(dim=-1)
+		self.device = device
 
 	def forward(self,x,temperature):
 		eps = 1e-20
-		g = -torch.log(-torch.log(torch.rand(*x.shape)+eps)+eps)
+		g = -torch.log(-torch.log(torch.rand(*x.shape,device=self.device)+eps)+eps)
 		gumbel_sample = x + g
 		return self.softmax(gumbel_sample/temperature)
 

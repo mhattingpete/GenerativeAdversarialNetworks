@@ -187,13 +187,13 @@ class CondConvGenerator(nn.Module):
 #######################################
 
 class GumbelRNNGenerator(nn.Module):
-	def __init__(self,input_size,hidden_size,output_size,num_layers=2,activation=nn.ELU()):
+	def __init__(self,input_size,hidden_size,output_size,device,num_layers=2,activation=nn.ELU()):
 		super().__init__()
 		# layers
 		self.rnn1 = nn.GRU(input_size,hidden_size,num_layers=num_layers,batch_first=True,bidirectional=True)
 		self.activation = activation
 		self.rnn2 = nn.GRU(hidden_size*2,output_size,batch_first=True)
-		self.gumbelsoftmax = GumbelSoftmax()
+		self.gumbelsoftmax = GumbelSoftmax(device)
 
 	def forward(self,x,temperature):
 		x,_ = self.rnn1(x)
