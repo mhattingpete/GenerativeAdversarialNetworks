@@ -77,13 +77,24 @@ class PixelwiseNormalization(nn.Module):
 		return self.__class__.__name__ +"(eps = {})".format(self.eps)
 
 class SelfAttention(nn.Module):
-	def __init__(self,in_channels):
+	def __init__(self,hidden_size,layer_type="Conv2d"):
 		super().__init__()
-		self.in_channels = in_channels
-		self.C_bar = int(in_channels/8)
-		self.f = nn.Conv2d(in_channels,self.C_bar,kernel_size=1)
-		self.g = nn.Conv2d(in_channels,self.C_bar,kernel_size=1)
-		self.h = nn.Conv2d(in_channels,in_channels,kernel_size=1)
+		self.hidden_size = hidden_size
+		self.C_bar = int(hidden_size/8)
+		layer_type = layer_type.lower()
+		if layer_type == "linear":
+			self.f = nn.Linear(hidden_size,self.C_bar)
+			self.g = nn.Linear(hidden_size,self.C_bar)
+			self.h = nn.Linear(hidden_size,hidden_size)
+		elif layer_type == "conv1d":
+			self.f = nn.Conv1d(hidden_size,self.C_bar,kernel_size=1)
+			self.g = nn.Conv1d(hidden_size,self.C_bar,kernel_size=1)
+			self.h = nn.Conv1d(hidden_size,hidden_size,kernel_size=1)
+		else:
+			self.f = nn.Conv2d(hidden_size,self.C_bar,kernel_size=1)
+			self.g = nn.Conv2d(hidden_size,self.C_bar,kernel_size=1)
+			self.h = nn.Conv2d(hidden_size,hidden_size,kernel_size=1)
+
 		self.gamma = nn.Parameter(torch.FloatTensor(1).fill_(0))
 		self.softmax = nn.Softmax(dim=-1)
 
@@ -91,11 +102,25 @@ class SelfAttention(nn.Module):
 		batch_size = x.size(0)
 		x_f = self.f(x).view(batch_size,self.C_bar,-1)
 		x_g = self.g(x).view(batch_size,self.C_bar,-1)
-		x_h = self.h(x).view(batch_size,self.in_channels,-1)
+		x_h = self.h(x).view(batch_size,self.hidden_size,-1)
 		s = torch.transpose(x_f,1,2).matmul(x_g)
 		beta = self.softmax(s)
 		o = x_h.matmul(beta).view(*x.shape)
 		return x + o.mul(self.gamma)
 
 	def __repr__(self):
-		return self.__class__.__name__ +"(in_channels = {})".format(self.in_channels)
+		return self.__class__.__name__ +"(hidden_size = {})".format(self.hidden_size)
+
+class GumbelSoftmax(nn.Module):
+	def __init__(self):
+		super().__init__()
+		self.softmax = nn.Softmax(dim=-1)
+
+	def forward(self,x,temperature):
+		eps = 1e-20
+		g = -torch.log(-torch.log(torch.rand(*x.shape)+eps)+eps)
+		gumbel_sample = x + g
+		return self.softmax(gumbel_sample/temperature)
+
+	def __repr__(self):
+		return self.__class__.__name__ +"()"

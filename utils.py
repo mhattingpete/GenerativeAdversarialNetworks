@@ -18,6 +18,12 @@ def sample_noise(num_samples,noise_dim,device):
 	'''
 	return torch.randn(num_samples,noise_dim).to(device)
 
+def sample_sequence_noise(num_samples,num_steps,noise_dim,device):
+	'''
+	Sample a sequence of vector of normal distributed values
+	'''
+	return torch.randn(num_samples,num_steps,noise_dim).to(device)
+
 def true_target(num_samples,device):
 	'''
 	Tensor of ones to match the true target
@@ -31,10 +37,11 @@ def fake_target(num_samples,device):
 	return torch.zeros(num_samples,1).to(device)
 	
 def onehot(vec,output_size):
+	out_size = vec.size()+torch.Size([output_size])
 	vec = vec.view(-1,1)
 	out = torch.zeros(vec.size(0),output_size).type(torch.LongTensor)
 	out.scatter_(1,vec,1)
-	return out
+	return out.view(out_size)
 
 def num_parameters(model):
 	return sum(p.numel() for p in model.parameters() if p.requires_grad)

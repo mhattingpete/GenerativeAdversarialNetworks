@@ -179,3 +179,22 @@ class CondConvDiscriminator(nn.Module):
 		x = self.input_layers(x)
 		x = torch.cat([x,y],1)
 		return self.layers(x).view(-1,self.output_size)
+
+#######################################
+#####        Text models          #####
+#######################################
+
+class GumbelRNNDiscriminator(nn.Module):
+	def __init__(self,input_size,hidden_size,num_layers=2,activation=nn.LeakyReLU(0.2)):
+		super().__init__()
+		# layers
+		self.rnn1 = nn.GRU(input_size,hidden_size,num_layers=num_layers,batch_first=True,bidirectional=True)
+		self.activation = activation
+		self.rnn2 = nn.GRU(hidden_size*2,1,batch_first=True)
+
+	def forward(self,x):
+		batch_size = x.size(0)
+		x,_ = self.rnn1(x)
+		x = self.activation(x)
+		_,x = self.rnn2(x)
+		return x.view(batch_size,-1)

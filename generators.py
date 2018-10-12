@@ -3,7 +3,7 @@ from torch import nn
 import torch
 
 # local imports
-from layers import MultiLayerPerceptron,PixelwiseNormalization,Conv2dEqualized,SelfAttention
+from layers import MultiLayerPerceptron,PixelwiseNormalization,Conv2dEqualized,SelfAttention,GumbelSoftmax
 
 #######################################
 #####    Unconditional models     #####
@@ -181,3 +181,22 @@ class CondConvGenerator(nn.Module):
 		x = self.input_layers(x)
 		x = torch.cat([x,y],1)
 		return self.layers(x)
+
+#######################################
+#####        Text models          #####
+#######################################
+
+class GumbelRNNGenerator(nn.Module):
+	def __init__(self,input_size,hidden_size,output_size,num_layers=2,activation=nn.ELU()):
+		super().__init__()
+		# layers
+		self.rnn1 = nn.GRU(input_size,hidden_size,num_layers=num_layers,batch_first=True,bidirectional=True)
+		self.activation = activation
+		self.rnn2 = nn.GRU(hidden_size*2,output_size,batch_first=True)
+		self.gumbelsoftmax = GumbelSoftmax()
+
+	def forward(self,x,temperature):
+		x,_ = self.rnn1(x)
+		x = self.activation(x)
+		x,_ = self.rnn2(x)
+		return self.gumbelsoftmax(x,temperature)
