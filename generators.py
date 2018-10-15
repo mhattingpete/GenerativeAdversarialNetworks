@@ -215,7 +215,7 @@ class GumbelAttRNNGenerator(nn.Module):
 		self.rnncell = nn.GRUCell(input_size,input_size)
 		self.rnn1 = nn.GRU(input_size,hidden_size,num_layers=num_layers,bidirectional=True,batch_first=True)
 		self.activation = activation
-		self.attention = SelfAttention(hidden_size*2)
+		self.attention = SelfAttention(hidden_size*2,layer_type='conv1d')
 		self.rnn2 = nn.GRU(hidden_size*2,output_size,batch_first=True)
 		self.gumbelsoftmax = GumbelSoftmax(device)
 
