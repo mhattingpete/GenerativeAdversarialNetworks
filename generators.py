@@ -208,7 +208,7 @@ class GumbelRNNGenerator(nn.Module):
 		x,_ = self.rnn2(x)
 		return self.gumbelsoftmax(x,temperature)
 
-class GumbelRNNAttGenerator(nn.Module):
+class GumbelAttRNNGenerator(nn.Module):
 	def __init__(self,input_size,hidden_size,output_size,device,num_layers=2,activation=nn.ELU()):
 		super().__init__()
 		# layers
