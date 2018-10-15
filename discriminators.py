@@ -205,14 +205,18 @@ class GumbelAttRNNDiscriminator(nn.Module):
 		# layers
 		self.rnn1 = nn.GRU(input_size,hidden_size,num_layers=num_layers,batch_first=True,bidirectional=True)
 		self.activation = activation
+		self.batchnorm1 = nn.BatchNorm1d(hidden_size*2)
 		self.attention = SelfAttention(hidden_size*2,layer_type='conv1d')
+		self.batchnorm2 = nn.BatchNorm1d(hidden_size*2)
 		self.rnn2 = nn.GRU(hidden_size*2,1,batch_first=True)
 
 	def forward(self,x):
 		batch_size = x.size(0)
 		x,_ = self.rnn1(x)
 		x = self.activation(x)
+		x = self.batchnorm1(x.transpose(2,1))
 		x = self.attention(x)
 		x = self.activation(x)
+		x = self.batchnorm2(x).transpose(1,2)
 		_,x = self.rnn2(x)
 		return x.view(batch_size,-1)

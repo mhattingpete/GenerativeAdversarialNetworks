@@ -213,9 +213,12 @@ class GumbelAttRNNGenerator(nn.Module):
 		super().__init__()
 		# layers
 		self.rnncell = nn.GRUCell(input_size,input_size)
+		self.batchnorm1 = nn.BatchNorm1d(input_size)
 		self.rnn1 = nn.GRU(input_size,hidden_size,num_layers=num_layers,bidirectional=True,batch_first=True)
 		self.activation = activation
+		self.batchnorm2 = nn.BatchNorm1d(hidden_size*2)
 		self.attention = SelfAttention(hidden_size*2,layer_type='conv1d')
+		self.batchnorm3 = nn.BatchNorm1d(hidden_size*2)
 		self.rnn2 = nn.GRU(hidden_size*2,output_size,batch_first=True)
 		self.gumbelsoftmax = GumbelSoftmax(device)
 
@@ -226,9 +229,13 @@ class GumbelAttRNNGenerator(nn.Module):
 			hx = self.rnncell(hx,hx)
 			x.append(hx)
 		x = torch.stack(x).transpose(0,1)
+		x = self.activation(x)
+		x = self.batchnorm1(x.transpose(2,1)).transpose(1,2)
 		x,_ = self.rnn1(x)
 		x = self.activation(x)
+		x = self.batchnorm2(x.transpose(2,1))
 		x = self.attention(x)
 		x = self.activation(x)
+		x = self.batchnorm3(x).transpose(1,2)
 		x,_ = self.rnn2(x)
 		return self.gumbelsoftmax(x,temperature)
