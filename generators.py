@@ -239,3 +239,35 @@ class GumbelAttRNNGenerator(nn.Module):
 		x = self.batchnorm3(x).transpose(1,2)
 		x,_ = self.rnn2(x)
 		return self.gumbelsoftmax(x,temperature)
+
+class GumbelSAGenerator(nn.Module):
+	def __init__(self,input_size,hidden_size,output_size,device,activation=nn.ReLU(),last_activation=nn.Tanh()):
+		super().__init__()
+		# layers
+		layers = [
+		nn.utils.spectral_norm(nn.ConvTranspose1d(input_size,hidden_size*4,kernel_size=2,stride=1,padding=0)),
+		nn.BatchNorm1d(hidden_size*4),
+		activation,
+		nn.utils.spectral_norm(nn.ConvTranspose1d(hidden_size*4,hidden_size*2,kernel_size=4,stride=1,padding=0)),
+		nn.BatchNorm1d(hidden_size*2),
+		activation,
+		SelfAttention(hidden_size*2,layer_type='conv1d'),
+		nn.BatchNorm1d(hidden_size*2),
+		activation,
+		nn.utils.spectral_norm(nn.ConvTranspose1d(hidden_size*2,hidden_size,kernel_size=4,stride=1,padding=0)),
+		nn.BatchNorm1d(hidden_size),
+		activation,
+		nn.utils.spectral_norm(nn.ConvTranspose1d(hidden_size,output_size,kernel_size=4,stride=2,padding=1)),
+		last_activation
+		]
+		self.layers = nn.Sequential(*layers)
+		self.gumbelsoftmax = GumbelSoftmax(device)
+
+		for m in self.modules():
+			if isinstance(m,nn.ConvTranspose2d):
+				m.weight.data.normal_(0.0,0.02)
+				if m.bias is not None:
+					m.bias.data.zero_()
+
+	def forward(self,x,temperature):
+		return self.gumbelsoftmax(self.layers(x).transpose(1,2),temperature)

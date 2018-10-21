@@ -34,8 +34,8 @@ def onehot(vec,output_size):
 	out_size = vec.size()+torch.Size([output_size])
 	vec = vec.view(-1,1)
 	out = torch.zeros(vec.size(0),output_size).type(torch.LongTensor)
-	out.scatter_(1,vec,1)
-	return out.view(out_size)
+	out.scatter_(1,vec.type(torch.LongTensor),1)
+	return out.view(out_size).type(torch.FloatTensor)
 
 def num_parameters(model):
 	return sum(p.numel() for p in model.parameters() if p.requires_grad)
