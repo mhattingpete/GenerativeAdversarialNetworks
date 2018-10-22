@@ -121,7 +121,7 @@ class GumbelSoftmax(nn.Module):
 		eps = 1e-20
 		g = -torch.log(-torch.log(torch.rand(*x.shape,device=self.device)+eps)+eps)
 		gumbel_sample = x + g
-		return self.softmax(gumbel_sample/temperature)
+		return self.softmax(temperature*gumbel_sample)
 
 	def __repr__(self):
 		return self.__class__.__name__ +"()"
