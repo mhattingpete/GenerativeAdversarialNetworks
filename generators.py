@@ -241,24 +241,23 @@ class GumbelAttRNNGenerator(nn.Module):
 		return self.gumbelsoftmax(x,temperature)
 
 class GumbelSAGenerator(nn.Module):
-	def __init__(self,input_size,hidden_size,output_size,device,activation=nn.ReLU(),last_activation=nn.Tanh()):
+	def __init__(self,input_size,hidden_size,output_size,device,activation=nn.ReLU()):
 		super().__init__()
 		# layers
 		layers = [
-		nn.utils.spectral_norm(nn.ConvTranspose1d(input_size,hidden_size*4,kernel_size=2,stride=1,padding=0)),
+		nn.utils.spectral_norm(nn.ConvTranspose1d(input_size,hidden_size*4,kernel_size=3,stride=1,padding=1)),
 		nn.BatchNorm1d(hidden_size*4),
 		activation,
-		nn.utils.spectral_norm(nn.ConvTranspose1d(hidden_size*4,hidden_size*2,kernel_size=4,stride=1,padding=0)),
+		nn.utils.spectral_norm(nn.ConvTranspose1d(hidden_size*4,hidden_size*2,kernel_size=3,stride=1,padding=1)),
 		nn.BatchNorm1d(hidden_size*2),
 		activation,
 		SelfAttention(hidden_size*2,layer_type='conv1d'),
 		nn.BatchNorm1d(hidden_size*2),
 		activation,
-		nn.utils.spectral_norm(nn.ConvTranspose1d(hidden_size*2,hidden_size,kernel_size=4,stride=1,padding=0)),
+		nn.utils.spectral_norm(nn.ConvTranspose1d(hidden_size*2,hidden_size,kernel_size=3,stride=1,padding=1)),
 		nn.BatchNorm1d(hidden_size),
 		activation,
-		nn.utils.spectral_norm(nn.ConvTranspose1d(hidden_size,output_size,kernel_size=4,stride=2,padding=1)),
-		last_activation
+		nn.utils.spectral_norm(nn.ConvTranspose1d(hidden_size,output_size,kernel_size=3,stride=1,padding=1)),
 		]
 		self.layers = nn.Sequential(*layers)
 		self.gumbelsoftmax = GumbelSoftmax(device)

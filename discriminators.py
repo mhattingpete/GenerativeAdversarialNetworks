@@ -222,20 +222,20 @@ class GumbelAttRNNDiscriminator(nn.Module):
 		return x.view(batch_size,-1)
 
 class GumbelSADiscriminator(nn.Module):
-	def __init__(self,input_size,hidden_size,output_size,num_embeddings=6,activation=nn.LeakyReLU(0.2),last_activation=None):
+	def __init__(self,input_size,hidden_size,output_size,num_embeddings=6,activation=nn.LeakyReLU(0.2),last_activation=nn.Sigmoid()):
 		super().__init__()
 		# layers
 		self.embeddings = nn.ModuleList([nn.Linear(input_size,hidden_size,bias=False) for _ in range(num_embeddings)])
 		layers = [
-		nn.utils.spectral_norm(nn.Conv1d(hidden_size,hidden_size,kernel_size=4,stride=2,padding=1)),
+		nn.utils.spectral_norm(nn.Conv1d(hidden_size,hidden_size,kernel_size=3,stride=1,padding=1)),
 		activation,
-		nn.utils.spectral_norm(nn.Conv1d(hidden_size,hidden_size*2,kernel_size=4,stride=1,padding=0)),
+		nn.utils.spectral_norm(nn.Conv1d(hidden_size,hidden_size*2,kernel_size=3,stride=1,padding=1)),
 		activation,
 		SelfAttention(hidden_size*2,layer_type='conv1d'),
 		activation,
-		nn.utils.spectral_norm(nn.Conv1d(hidden_size*2,hidden_size*4,kernel_size=4,stride=1,padding=0)),
+		nn.utils.spectral_norm(nn.Conv1d(hidden_size*2,hidden_size*4,kernel_size=3,stride=1,padding=1)),
 		activation,
-		nn.utils.spectral_norm(nn.Conv1d(hidden_size*4,output_size,kernel_size=2,stride=1,padding=0))
+		nn.utils.spectral_norm(nn.Conv1d(hidden_size*4,output_size,kernel_size=3,stride=1,padding=1))
 		]
 		if last_activation:
 			layers.append(last_activation)
