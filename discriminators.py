@@ -185,74 +185,12 @@ class CondConvDiscriminator(nn.Module):
 #######################################
 
 class GumbelRNNDiscriminator(nn.Module):
-	def __init__(self,input_size,hidden_size,num_layers=3,activation=nn.LeakyReLU(0.2)):
+	def __init__(self,input_size,output_size):
 		super().__init__()
 		# layers
-		self.rnn1 = nn.GRU(input_size,hidden_size,num_layers=num_layers,batch_first=True,bidirectional=True)
-		self.activation = activation
-		self.rnn2 = nn.GRU(hidden_size*2,1,batch_first=True)
-
-	def forward(self,x):
-		batch_size = x.size(0)
-		x,_ = self.rnn1(x)
-		x = self.activation(x)
-		_,x = self.rnn2(x)
-		return x.view(batch_size,-1)
-
-class GumbelAttRNNDiscriminator(nn.Module):
-	def __init__(self,input_size,hidden_size,num_layers=3,activation=nn.LeakyReLU(0.2)):
-		super().__init__()
-		# layers
-		self.rnn1 = nn.GRU(input_size,hidden_size,num_layers=num_layers,batch_first=True,bidirectional=True)
-		self.activation = activation
-		self.batchnorm1 = nn.BatchNorm1d(hidden_size*2)
-		self.attention = SelfAttention(hidden_size*2,layer_type='conv1d')
-		self.batchnorm2 = nn.BatchNorm1d(hidden_size*2)
-		self.rnn2 = nn.GRU(hidden_size*2,1,batch_first=True)
-
-	def forward(self,x):
-		batch_size = x.size(0)
-		x,_ = self.rnn1(x)
-		x = self.activation(x)
-		x = self.batchnorm1(x.transpose(2,1))
-		x = self.attention(x)
-		x = self.activation(x)
-		x = self.batchnorm2(x).transpose(1,2)
-		_,x = self.rnn2(x)
-		return x.view(batch_size,-1)
-
-class GumbelSADiscriminator(nn.Module):
-	def __init__(self,input_size,hidden_size,output_size,num_embeddings=6,activation=nn.LeakyReLU(0.2),last_activation=nn.Sigmoid()):
-		super().__init__()
-		# layers
-		self.embeddings = nn.ModuleList([nn.Linear(input_size,hidden_size,bias=False) for _ in range(num_embeddings)])
-		layers = [
-		nn.utils.spectral_norm(nn.Conv1d(hidden_size,hidden_size,kernel_size=3,stride=1,padding=1)),
-		activation,
-		nn.utils.spectral_norm(nn.Conv1d(hidden_size,hidden_size*2,kernel_size=3,stride=1,padding=1)),
-		activation,
-		SelfAttention(hidden_size*2,layer_type='conv1d'),
-		activation,
-		nn.utils.spectral_norm(nn.Conv1d(hidden_size*2,hidden_size*4,kernel_size=3,stride=1,padding=1)),
-		activation,
-		nn.utils.spectral_norm(nn.Conv1d(hidden_size*4,output_size,kernel_size=3,stride=1,padding=1))
-		]
-		if last_activation:
-			layers.append(last_activation)
-		self.layers = nn.Sequential(*layers)
 		self.output_size = output_size
-
-		for m in self.modules():
-			if isinstance(m,nn.Conv2d):
-				m.weight.data.normal_(0.0,0.02)
-				if m.bias is not None:
-					m.bias.data.zero_()
+		self.rnn = nn.GRU(input_size,output_size,batch_first=True)
 
 	def forward(self,x):
-		out = []
-		for layer in self.embeddings:
-			emb = layer(x).transpose(2,1)
-			emb = self.layers(emb).view(-1,self.output_size)
-			out.append(emb)
-		x = torch.stack(out,dim=1)
-		return x
+		_,x = self.rnn(x)
+		return x.view(-1,self.output_size)

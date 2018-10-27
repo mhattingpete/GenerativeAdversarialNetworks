@@ -187,86 +187,42 @@ class CondConvGenerator(nn.Module):
 #######################################
 
 class GumbelRNNGenerator(nn.Module):
-	def __init__(self,input_size,hidden_size,output_size,device,num_layers=2,activation=nn.ELU()):
+	def __init__(self,input_size,hidden_size,noise_size,device,activation=nn.LeakyReLU(0.2)):
 		super().__init__()
-		# layers
-		self.rnncell = nn.GRUCell(input_size,input_size)
-		self.rnn1 = nn.GRU(input_size,hidden_size,num_layers=num_layers,bidirectional=True,batch_first=True)
+		self.device = device
+		# internal variable sizes
+		self.input_size = input_size
+		self.hidden_size = hidden_size
+		step_input_size = hidden_size + hidden_size
+		# layer definitions
+		self.z2h = nn.Linear(noise_size,hidden_size)
+		self.embedding = nn.Linear(input_size,hidden_size) # embedding is a linear layer since input is onehot encoded
+		self.batchnorm1 = nn.BatchNorm1d(step_input_size)
+		self.gru = nn.GRUCell(step_input_size,hidden_size)
+		self.h2o = nn.Linear(hidden_size,input_size)
+		self.batchnorm2 = nn.BatchNorm1d(hidden_size)
 		self.activation = activation
-		self.rnn2 = nn.GRU(hidden_size*2,output_size,batch_first=True)
-		self.gumbelsoftmax = GumbelSoftmax(device)
+		self.last_activation = GumbelSoftmax(device)
 
-	def forward(self,noise,num_steps,temperature):
-		x = []
-		hx = noise
+	def forward(self,z,num_steps,temperature=torch.FloatTensor([1]),x=None):
+		predictions = []
+		z = self.activation(self.z2h(z))
+		h = z # initialize the hidden state
+		previous_output = torch.zeros(z.size(0),self.input_size).to(self.device)
+		previous_output[:,-1] = 1.0 # <SOS> token (start of sequence)
 		for i in range(num_steps):
-			hx = self.rnncell(hx,hx)
-			x.append(hx)
-		x = torch.stack(x).transpose(0,1)
-		x,_ = self.rnn1(x)
-		x = self.activation(x)
-		x,_ = self.rnn2(x)
-		return self.gumbelsoftmax(x,temperature)
-
-class GumbelAttRNNGenerator(nn.Module):
-	def __init__(self,input_size,hidden_size,output_size,device,num_layers=2,activation=nn.ELU()):
-		super().__init__()
-		# layers
-		self.rnncell = nn.GRUCell(input_size,input_size)
-		self.batchnorm1 = nn.BatchNorm1d(input_size)
-		self.rnn1 = nn.GRU(input_size,hidden_size,num_layers=num_layers,bidirectional=True,batch_first=True)
-		self.activation = activation
-		self.batchnorm2 = nn.BatchNorm1d(hidden_size*2)
-		self.attention = SelfAttention(hidden_size*2,layer_type='conv1d')
-		self.batchnorm3 = nn.BatchNorm1d(hidden_size*2)
-		self.rnn2 = nn.GRU(hidden_size*2,output_size,batch_first=True)
-		self.gumbelsoftmax = GumbelSoftmax(device)
-
-	def forward(self,noise,num_steps,temperature):
-		x = []
-		hx = noise
-		for i in range(num_steps):
-			hx = self.rnncell(hx,hx)
-			x.append(hx)
-		x = torch.stack(x).transpose(0,1)
-		x = self.activation(x)
-		x = self.batchnorm1(x.transpose(2,1)).transpose(1,2)
-		x,_ = self.rnn1(x)
-		x = self.activation(x)
-		x = self.batchnorm2(x.transpose(2,1))
-		x = self.attention(x)
-		x = self.activation(x)
-		x = self.batchnorm3(x).transpose(1,2)
-		x,_ = self.rnn2(x)
-		return self.gumbelsoftmax(x,temperature)
-
-class GumbelSAGenerator(nn.Module):
-	def __init__(self,input_size,hidden_size,output_size,device,activation=nn.ReLU()):
-		super().__init__()
-		# layers
-		layers = [
-		nn.utils.spectral_norm(nn.ConvTranspose1d(input_size,hidden_size*4,kernel_size=3,stride=1,padding=1)),
-		nn.BatchNorm1d(hidden_size*4),
-		activation,
-		nn.utils.spectral_norm(nn.ConvTranspose1d(hidden_size*4,hidden_size*2,kernel_size=3,stride=1,padding=1)),
-		nn.BatchNorm1d(hidden_size*2),
-		activation,
-		SelfAttention(hidden_size*2,layer_type='conv1d'),
-		nn.BatchNorm1d(hidden_size*2),
-		activation,
-		nn.utils.spectral_norm(nn.ConvTranspose1d(hidden_size*2,hidden_size,kernel_size=3,stride=1,padding=1)),
-		nn.BatchNorm1d(hidden_size),
-		activation,
-		nn.utils.spectral_norm(nn.ConvTranspose1d(hidden_size,output_size,kernel_size=3,stride=1,padding=1)),
-		]
-		self.layers = nn.Sequential(*layers)
-		self.gumbelsoftmax = GumbelSoftmax(device)
-
-		for m in self.modules():
-			if isinstance(m,nn.ConvTranspose2d):
-				m.weight.data.normal_(0.0,0.02)
-				if m.bias is not None:
-					m.bias.data.zero_()
-
-	def forward(self,x,temperature):
-		return self.gumbelsoftmax(self.layers(x).transpose(1,2),temperature)
+			previous_output = self.activation(self.embedding(previous_output))
+			step_input = torch.cat([previous_output,z],dim=1)
+			step_input = self.batchnorm1(step_input)
+			h = self.gru(step_input,h)
+			out = self.activation(h)
+			out = self.batchnorm2(out)
+			out = self.h2o(out)
+			out = self.last_activation(out,temperature)
+			if x is not None: # teacher forcing
+				previous_output = x[:,i,:]
+			else: # use prediction as input
+				previous_output = out
+			predictions.append(out)
+		output = torch.stack(predictions).transpose(1,0)
+		return output
