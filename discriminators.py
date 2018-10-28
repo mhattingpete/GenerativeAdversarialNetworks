@@ -185,12 +185,16 @@ class CondConvDiscriminator(nn.Module):
 #######################################
 
 class GumbelRNNDiscriminator(nn.Module):
-	def __init__(self,input_size,output_size):
+	def __init__(self,input_size,hidden_size,output_size,activation=nn.LeakyReLU(0.2)):
 		super().__init__()
 		# layers
 		self.output_size = output_size
-		self.rnn = nn.GRU(input_size,output_size,batch_first=True)
+		self.embedding = nn.Linear(input_size,hidden_size)
+		self.activation = activation
+		self.rnn = nn.GRU(hidden_size,output_size,batch_first=True)
 
 	def forward(self,x):
+		x = self.embedding(x)
+		x = self.activation(x)
 		_,x = self.rnn(x)
 		return x.view(-1,self.output_size)
