@@ -186,47 +186,6 @@ class CondConvGenerator(nn.Module):
 #####        Text models          #####
 #######################################
 
-class GumbelRNNGenerator_OLD(nn.Module):
-	def __init__(self,input_size,hidden_size,noise_size,device,activation=nn.LeakyReLU(0.2)):
-		super().__init__()
-		self.device = device
-		# internal variable sizes
-		self.input_size = input_size
-		self.hidden_size = hidden_size
-		step_input_size = hidden_size + hidden_size
-		# layer definitions
-		self.z2h = nn.Linear(noise_size,hidden_size)
-		self.embedding = nn.Linear(input_size,hidden_size) # embedding is a linear layer since input is onehot encoded
-		self.batchnorm1 = nn.BatchNorm1d(step_input_size)
-		self.gru = nn.GRUCell(step_input_size,hidden_size)
-		self.h2o = nn.Linear(hidden_size,input_size)
-		self.batchnorm2 = nn.BatchNorm1d(hidden_size)
-		self.activation = activation
-		self.last_activation = GumbelSoftmax(device)
-
-	def forward(self,z,num_steps,temperature,x=None):
-		predictions = []
-		z = self.activation(self.z2h(z))
-		h = z # initialize the hidden state
-		previous_output = torch.zeros(z.size(0),self.input_size).to(self.device)
-		previous_output[:,-1] = 1.0 # <EOS> token
-		for i in range(num_steps):
-			previous_output = self.activation(self.embedding(previous_output))
-			step_input = torch.cat([previous_output,z],dim=1)
-			step_input = self.batchnorm1(step_input)
-			h = self.gru(step_input,h)
-			out = self.activation(h)
-			out = self.batchnorm2(out)
-			out = self.h2o(out)
-			out = self.last_activation(out,temperature)
-			if x is not None: # teacher forcing
-				previous_output = x[:,i,:]
-			else: # use prediction as input
-				previous_output = out
-			predictions.append(out)
-		output = torch.stack(predictions).transpose(1,0)
-		return output
-
 class GumbelRNNGenerator(nn.Module):
 	def __init__(self,hidden_size,noise_size,output_size,device,activation=nn.LeakyReLU(0.2)):
 		super().__init__()
@@ -258,6 +217,51 @@ class GumbelRNNGenerator(nn.Module):
 			h = self.gru(step_input,h)
 			out = self.activation(h)
 			out = self.batchnorm2(out)
+			out = self.h2o(out)
+			out = self.last_activation(out,temperature)
+			if x is not None: # teacher forcing
+				previous_output = x[:,i]
+			else: # use prediction as input
+				previous_output = torch.argmax(out,dim=-1)
+			predictions.append(out)
+		output = torch.stack(predictions).transpose(1,0)
+		return output
+
+class GumbelSARNNGenerator(nn.Module):
+	def __init__(self,hidden_size,noise_size,output_size,device,activation=nn.LeakyReLU(0.2)):
+		super().__init__()
+		self.device = device
+		# internal variable sizes
+		self.hidden_size = hidden_size
+		step_input_size = hidden_size + hidden_size
+		# layer definitions
+		self.z2h = nn.Linear(noise_size,hidden_size)
+		self.batchnorm1 = nn.BatchNorm1d(hidden_size)
+		self.attention = SelfAttention(hidden_size,layer_type="conv1d")
+		self.batchnorm2 = nn.BatchNorm1d(hidden_size)
+		self.embedding = nn.Embedding(output_size,hidden_size)
+		self.batchnorm3 = nn.BatchNorm1d(step_input_size)
+		self.gru = nn.GRUCell(step_input_size,hidden_size)
+		self.h2o = nn.Linear(hidden_size,output_size)
+		self.batchnorm4 = nn.BatchNorm1d(hidden_size)
+		self.activation = activation
+		self.last_activation = GumbelSoftmax(device)
+		self.EOS_TOKEN = output_size-1
+
+	def forward(self,z,num_steps,temperature,x=None):
+		predictions = []
+		z = self.batchnorm1(self.activation(self.z2h(z)))
+		z = self.batchnorm2(self.activation(self.attention(z)))
+		h = z # initialize the hidden state
+		previous_output = torch.zeros(z.size(0),dtype=torch.long).to(self.device)
+		previous_output[:] = self.EOS_TOKEN # <EOS> token
+		for i in range(num_steps):
+			previous_output = self.activation(self.embedding(previous_output))
+			step_input = torch.cat([previous_output,z],dim=1)
+			step_input = self.batchnorm3(step_input)
+			h = self.gru(step_input,h)
+			out = self.activation(h)
+			out = self.batchnorm4(out)
 			out = self.h2o(out)
 			out = self.last_activation(out,temperature)
 			if x is not None: # teacher forcing
