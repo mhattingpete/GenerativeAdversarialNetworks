@@ -190,6 +190,21 @@ class GumbelRNNDiscriminator(nn.Module):
 		# layers
 		self.output_size = output_size
 		self.embedding = nn.Linear(input_size,hidden_size)
+		self.activation = activation
+		self.rnn = nn.GRU(hidden_size,output_size,batch_first=True)
+
+	def forward(self,x):
+		x = self.embedding(x)
+		x = self.activation(x)
+		_,x = self.rnn(x)
+		return x.view(-1,self.output_size)
+
+class GumbelSARNNDiscriminator(nn.Module):
+	def __init__(self,input_size,hidden_size,output_size,activation=nn.LeakyReLU(0.2)):
+		super().__init__()
+		# layers
+		self.output_size = output_size
+		self.embedding = nn.Linear(input_size,hidden_size)
 		self.batchnorm1 = nn.Batchnorm1d(hidden_size)
 		self.attention = SelfAttention(hidden_size)
 		self.batchnorm2 = nn.Batchnorm1d(hidden_size)
