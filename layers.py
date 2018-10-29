@@ -77,7 +77,7 @@ class PixelwiseNormalization(nn.Module):
 		return self.__class__.__name__ +"(eps = {})".format(self.eps)
 
 class SelfAttention(nn.Module):
-	def __init__(self,hidden_size,layer_type="Conv2d"):
+	def __init__(self,hidden_size,layer_type="conv2d"):
 		super().__init__()
 		self.hidden_size = hidden_size
 		self.C_bar = int(hidden_size/8)
