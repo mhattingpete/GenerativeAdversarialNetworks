@@ -205,14 +205,14 @@ class GumbelSARNNDiscriminator(nn.Module):
 		# layers
 		self.output_size = output_size
 		self.embedding = nn.Linear(input_size,hidden_size)
-		self.batchnorm1 = nn.Batchnorm1d(hidden_size)
-		self.attention = SelfAttention(hidden_size)
-		self.batchnorm2 = nn.Batchnorm1d(hidden_size)
+		self.batchnorm1 = nn.BatchNorm1d(hidden_size)
+		self.attention = SelfAttention(hidden_size,layer_type="conv1d")
+		self.batchnorm2 = nn.BatchNorm1d(hidden_size)
 		self.activation = activation
 		self.rnn = nn.GRU(hidden_size,output_size,batch_first=True)
 
 	def forward(self,x):
-		x = self.batchnorm1(self.activation(self.embedding(x)))
-		x = self.batchnorm2(self.activation(self.attention(x)))
+		x = self.batchnorm1(self.activation(self.embedding(x)).transpose(2,1))
+		x = self.batchnorm2(self.activation(self.attention(x))).transpose(1,2)
 		_,x = self.rnn(x)
 		return x.view(-1,self.output_size)

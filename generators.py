@@ -237,7 +237,7 @@ class GumbelSARNNGenerator(nn.Module):
 		# layer definitions
 		self.z2h = nn.Linear(noise_size,hidden_size)
 		self.batchnorm1 = nn.BatchNorm1d(hidden_size)
-		self.attention = SelfAttention(hidden_size,layer_type="conv1d")
+		self.attention = SelfAttention(hidden_size,layer_type="linear")
 		self.batchnorm2 = nn.BatchNorm1d(hidden_size)
 		self.embedding = nn.Embedding(output_size,hidden_size)
 		self.batchnorm3 = nn.BatchNorm1d(step_input_size)
