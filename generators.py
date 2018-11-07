@@ -286,7 +286,7 @@ class GumbelRelRNNGenerator(nn.Module):
 		self.batchnorm1 = nn.BatchNorm1d(hidden_size)
 		self.embedding = nn.Embedding(output_size,hidden_size)
 		self.batchnorm2 = nn.BatchNorm1d(step_input_size)
-		self.relRNN = RelationalRNNCell(step_input_size,mem_slots=mem_slots,head_size=head_size,num_heads=num_heads,gate_type="memory",activation=activation)
+		self.relRNN = RelationalRNNCell(step_input_size,mem_slots=mem_slots,head_size=head_size,num_heads=num_heads,gate_type=None,activation=activation)
 		self.m2o = nn.Linear(mem_slots*hidden_size,output_size)
 		self.activation = activation
 		self.last_activation = GumbelSoftmax(device)
@@ -296,6 +296,7 @@ class GumbelRelRNNGenerator(nn.Module):
 		predictions = []
 		z = self.batchnorm1(self.activation(self.z2m(z)))
 		mem = z.unsqueeze(1).expand(-1,self.mem_slots,-1) # initialize the hidden state
+		mem = mem.detach()
 		previous_output = torch.zeros(z.size(0),dtype=torch.long).to(self.device)
 		previous_output[:] = self.EOS_TOKEN # <EOS> token
 		for i in range(num_steps):

@@ -127,7 +127,7 @@ class GumbelSoftmax(nn.Module):
 		return self.__class__.__name__ +"()"
 
 class RelationalRNNCell(nn.Module):
-	def __init__(self,input_size,mem_slots,head_size,num_heads=8,gate_type=None,activation=nn.ELU()):
+	def __init__(self,input_size,mem_slots,head_size,num_heads=8,gate_type=None,num_attention_blocks=3,activation=nn.ELU()):
 		"""
 		input_size: the size of the input at each timestep
 		mem_slots: the number of rows of memory
@@ -144,14 +144,19 @@ class RelationalRNNCell(nn.Module):
 		self.mem_slots = mem_slots
 		self.num_gates = 2*self.gate_size()
 		self.mem_size = head_size * num_heads
+		self.num_attention_blocks = num_attention_blocks
 		self.i2m = nn.Linear(input_size,self.mem_size) # from input to mem_size
 		self.activation = activation
 		self.attention = MultiHeadAttention(self.mem_size,num_heads=num_heads) # multihead attention module
-		self.att_layernorm1 = nn.LayerNorm([self.mem_slots+1,self.mem_size])
-		self.att_layernorm2 = nn.LayerNorm([self.mem_slots+1,self.mem_size])
+		self.att_layernorm1 = nn.LayerNorm([self.mem_slots,self.mem_size])
+		self.att_layernorm2 = nn.LayerNorm([self.mem_slots,self.mem_size])
 		self.mlp_layers = MultiLayerPerceptron(hidden_sizes=[self.mem_size,2*self.mem_size,self.mem_size]) # multi layer perceptron module
-		self.i2g = nn.Linear(self.mem_size,self.num_gates) # from input (with mem_size) to gate
-		self.m2g = nn.Linear(self.mem_size,self.num_gates) # form memory to gate
+		if self.num_gates > 0:
+			self.i2g = nn.Linear(self.mem_size,self.num_gates) # from input (with mem_size) to gate
+			self.m2g = nn.Linear(self.mem_size,self.num_gates) # form memory to gate
+		else:
+			self.i2g = None
+			self.m2g = None
 		# biases for gates
 		self.forget_bias = nn.Parameter(torch.tensor(1.0,dtype=torch.float32))
 		self.input_bias = nn.Parameter(torch.tensor(0.0,dtype=torch.float32))
@@ -227,7 +232,7 @@ class MultiHeadAttention(nn.Module):
 		Q = self.query_layer(query)
 		K = self.key_layer(value)
 		V = self.value_layer(value)
-		d_k = value.size(2)
+		d_k_sqrt = self.hidden_size**(-0.5)
 		# split Q,K and V into num_heads values from dim=2 and merge in dim=0
 		chunk_size = int(self.hidden_size/self.num_heads)
 		Q = torch.cat(Q.split(split_size=chunk_size,dim=2),dim=0)
@@ -236,7 +241,7 @@ class MultiHeadAttention(nn.Module):
 		# calculate attention (QK^T)
 		att = torch.matmul(Q,K.transpose(1,2))
 		# and normalize
-		att = att/torch.sqrt(d_k)
+		att = d_k_sqrt * att
 		# apply softmax
 		att = self.softmax(att)
 		# multiply with V
