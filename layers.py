@@ -153,7 +153,7 @@ class RelationalRNNCell(nn.Module):
 		# biases for gates
 		self.forget_bias = nn.Parameter(torch.tensor(1.0,dtype=torch.float32))
 		self.input_bias = nn.Parameter(torch.tensor(0.0,dtype=torch.float32))
-		self._output_size = self.mem_size
+		self._output_size = self.mem_size * self.mem_slots
 
 	def forward(self,x,memory=None):
 		if memory is None:
@@ -204,7 +204,7 @@ class MultiHeadAttention(nn.Module):
 		super().__init__()
 		assert hidden_size % num_heads == 0
 		self.hidden_size = hidden_size
-		self.hidden_size_tensor = torch.tensor(self.hidden_size,dtype=torch.float32)
+		self.hidden_size_tensor = nn.Parameter(torch.tensor(self.hidden_size,dtype=torch.float32),requires_grad=False)
 		self.num_heads = num_heads
 		self.query_layer = nn.Linear(hidden_size,hidden_size,bias=False)
 		self.key_layer = nn.Linear(hidden_size,hidden_size,bias=False)
