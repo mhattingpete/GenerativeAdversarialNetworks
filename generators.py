@@ -280,6 +280,7 @@ class GumbelRelRNNGenerator(nn.Module):
 		hidden_size = head_size * num_heads
 		self.hidden_size = hidden_size
 		step_input_size = hidden_size + hidden_size
+		self.mem_slots = mem_slots
 		# layer definitions
 		self.z2m = nn.Linear(noise_size,hidden_size)
 		self.batchnorm1 = nn.BatchNorm1d(hidden_size)
@@ -294,7 +295,7 @@ class GumbelRelRNNGenerator(nn.Module):
 	def forward(self,z,num_steps,temperature,x=None):
 		predictions = []
 		z = self.batchnorm1(self.activation(self.z2m(z)))
-		mem = None#z # initialize the hidden state
+		mem = z.unsqueeze(1).expand(-1,self.mem_slots,-1) # initialize the hidden state
 		previous_output = torch.zeros(z.size(0),dtype=torch.long).to(self.device)
 		previous_output[:] = self.EOS_TOKEN # <EOS> token
 		for i in range(num_steps):

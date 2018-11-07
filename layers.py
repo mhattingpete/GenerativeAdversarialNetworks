@@ -147,6 +147,8 @@ class RelationalRNNCell(nn.Module):
 		self.i2m = nn.Linear(input_size,self.mem_size) # from input to mem_size
 		self.activation = activation
 		self.attention = MultiHeadAttention(self.mem_size,num_heads=num_heads) # multihead attention module
+		self.att_layernorm1 = nn.LayerNorm([self.mem_slots+1,self.mem_size])
+		self.att_layernorm2 = nn.LayerNorm([self.mem_slots+1,self.mem_size])
 		self.mlp_layers = MultiLayerPerceptron(hidden_sizes=[self.mem_size,2*self.mem_size,self.mem_size]) # multi layer perceptron module
 		self.i2g = nn.Linear(self.mem_size,self.num_gates) # from input (with mem_size) to gate
 		self.m2g = nn.Linear(self.mem_size,self.num_gates) # form memory to gate
@@ -159,12 +161,23 @@ class RelationalRNNCell(nn.Module):
 		if memory is None:
 			memory = self.initMemory(x)
 		x = self.activation(self.i2m(x)).unsqueeze(1)
-		memory_plus_input = torch.cat([memory,x],dim=1)
-		pred_memory = self.attention(memory,memory_plus_input) + memory
-		next_memory = self.mlp_layers(pred_memory) + pred_memory
+		next_memory = self.attend_over_memory(x,memory)
 		if self.gate_type == 'unit' or self.gate_type == 'memory':
 			next_memory = self.apply_gates(x,memory,next_memory)
 		return next_memory
+
+	def attend_over_memory(self,x,memory):
+		for _ in range(self.num_attention_blocks):
+			memory_plus_input = torch.cat([memory,x],dim=1)
+			# attend to memory and a skip connection
+			memory = self.attention(memory,memory_plus_input) + memory
+			# add layernorm
+			memory = self.att_layernorm1(memory)
+			# skip connection to mlp output
+			memory = self.mlp_layers(memory) + memory
+			# add layernorm
+			memory = self.att_layernorm2(memory)
+		return memory
 
 	def apply_gates(self,x,memory,next_memory):
 		memory = torch.tanh(memory)
@@ -204,7 +217,6 @@ class MultiHeadAttention(nn.Module):
 		super().__init__()
 		assert hidden_size % num_heads == 0
 		self.hidden_size = hidden_size
-		self.hidden_size_tensor = nn.Parameter(torch.tensor(self.hidden_size,dtype=torch.float32),requires_grad=False)
 		self.num_heads = num_heads
 		self.query_layer = nn.Linear(hidden_size,hidden_size,bias=False)
 		self.key_layer = nn.Linear(hidden_size,hidden_size,bias=False)
@@ -215,6 +227,7 @@ class MultiHeadAttention(nn.Module):
 		Q = self.query_layer(query)
 		K = self.key_layer(value)
 		V = self.value_layer(value)
+		d_k = value.size(2)
 		# split Q,K and V into num_heads values from dim=2 and merge in dim=0
 		chunk_size = int(self.hidden_size/self.num_heads)
 		Q = torch.cat(Q.split(split_size=chunk_size,dim=2),dim=0)
@@ -223,7 +236,7 @@ class MultiHeadAttention(nn.Module):
 		# calculate attention (QK^T)
 		att = torch.matmul(Q,K.transpose(1,2))
 		# and normalize
-		att = att/torch.sqrt(self.hidden_size_tensor)
+		att = att/torch.sqrt(d_k)
 		# apply softmax
 		att = self.softmax(att)
 		# multiply with V
