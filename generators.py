@@ -3,7 +3,7 @@ from torch import nn
 import torch
 
 # local imports
-from layers import MultiLayerPerceptron,PixelwiseNormalization,Conv2dEqualized,SelfAttention,GumbelSoftmax
+from layers import MultiLayerPerceptron,PixelwiseNormalization,Conv2dEqualized,SelfAttention,GumbelSoftmax,RelationalRNNCell
 
 #######################################
 #####    Unconditional models     #####
@@ -263,6 +263,46 @@ class GumbelSARNNGenerator(nn.Module):
 			out = self.activation(h)
 			out = self.batchnorm4(out)
 			out = self.h2o(out)
+			out = self.last_activation(out,temperature)
+			if x is not None: # teacher forcing
+				previous_output = x[:,i]
+			else: # use prediction as input
+				previous_output = torch.argmax(out,dim=-1)
+			predictions.append(out)
+		output = torch.stack(predictions).transpose(1,0)
+		return output
+
+class GumbelRelRNNGenerator(nn.Module):
+	def __init__(self,mem_slots,head_size,num_heads,noise_size,output_size,device,activation=nn.LeakyReLU(0.2)):
+		super().__init__()
+		self.device = device
+		# internal variable sizes
+		hidden_size = head_size * num_heads
+		self.hidden_size = hidden_size
+		step_input_size = hidden_size + hidden_size
+		# layer definitions
+		self.z2m = nn.Linear(noise_size,hidden_size)
+		self.batchnorm1 = nn.BatchNorm1d(hidden_size)
+		self.embedding = nn.Embedding(output_size,hidden_size)
+		self.batchnorm2 = nn.BatchNorm1d(step_input_size)
+		self.relRNN = RelationalRNNCell(step_input_size,mem_slots=mem_slots,head_size=head_size,num_heads=num_heads,gate_type="memory",activation=activation)
+		self.m2o = nn.Linear(mem_slots*hidden_size,output_size)
+		self.activation = activation
+		self.last_activation = GumbelSoftmax(device)
+		self.EOS_TOKEN = output_size-1
+
+	def forward(self,z,num_steps,temperature,x=None):
+		predictions = []
+		z = self.batchnorm1(self.activation(self.z2m(z)))
+		mem = None#z # initialize the hidden state
+		previous_output = torch.zeros(z.size(0),dtype=torch.long).to(self.device)
+		previous_output[:] = self.EOS_TOKEN # <EOS> token
+		for i in range(num_steps):
+			previous_output = self.activation(self.embedding(previous_output))
+			step_input = torch.cat([previous_output,z],dim=1)
+			step_input = self.batchnorm2(step_input)
+			mem = self.relRNN(step_input,mem)
+			out = self.m2o(mem.view(mem.size(0),-1))
 			out = self.last_activation(out,temperature)
 			if x is not None: # teacher forcing
 				previous_output = x[:,i]
