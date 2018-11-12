@@ -142,12 +142,12 @@ class RelationalRNNCell(nn.Module):
 		# memory settings
 		self.mem_slots = mem_slots
 		self.mem_slots_plus_input = mem_slots + 1 # denoted as N
-		self.num_gates = 2*self.gate_size()
 		self.mem_size = head_size * num_heads
 
 		# gate settings
 		assert gate_type in ["memory","unit",None]
 		self.gate_type = gate_type
+		self.num_gates = 2*self.gate_size()
 
 		# attention settings
 		self.num_attention_blocks = num_attention_blocks
@@ -164,8 +164,8 @@ class RelationalRNNCell(nn.Module):
 		self.qkv_layer = nn.Linear(self.mem_size,self.total_qkv_size,bias=False)
 		self.qkv_layernorm = nn.LayerNorm([self.mem_slots_plus_input,self.total_qkv_size])
 		self.softmax = nn.Softmax(dim=-1)
-		self.att_layernorm1 = nn.LayerNorm([self.mem_slots,self.mem_size])
-		self.att_layernorm2 = nn.LayerNorm([self.mem_slots,self.mem_size])
+		self.att_layernorm1 = nn.LayerNorm([self.mem_slots_plus_input,self.mem_size])
+		self.att_layernorm2 = nn.LayerNorm([self.mem_slots_plus_input,self.mem_size])
 		self.mlp_layers = MultiLayerPerceptron(hidden_sizes=[self.mem_size,self.mem_size,self.mem_size]) # multi layer perceptron module
 
 		# gates
@@ -242,7 +242,7 @@ class RelationalRNNCell(nn.Module):
 		next_memory = torch.matmul(att,v)
 
 		# [B, H, N, V] => [B, N, H, V] => [B, N, H*V]
-		next_memory = next_memory.permute(0,2,1,3)
+		next_memory = next_memory.permute(0,2,1,3).contiguous()
 		next_memory = next_memory.view(next_memory.shape[0],next_memory.shape[1],-1)
 		return next_memory
 
