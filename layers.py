@@ -139,18 +139,36 @@ class RelationalRNNCell(nn.Module):
 		activation: the activation applied to the input layer
 		"""
 		super().__init__()
-		assert gate_type in ["memory","unit",None]
-		self.gate_type = gate_type
+		# memory settings
 		self.mem_slots = mem_slots
+		self.mem_slots_plus_input = mem_slots + 1 # denoted as N
 		self.num_gates = 2*self.gate_size()
 		self.mem_size = head_size * num_heads
+
+		# gate settings
+		assert gate_type in ["memory","unit",None]
+		self.gate_type = gate_type
+
+		# attention settings
 		self.num_attention_blocks = num_attention_blocks
+
+		# input projection
 		self.i2m = nn.Linear(input_size,self.mem_size) # from input to mem_size
 		self.activation = activation
-		self.attention = MultiHeadAttention(self.mem_size,num_heads=num_heads) # multihead attention module
+
+		# attention module
+		self.head_size = head_size
+		self.qkv_size = 3 * head_size
+		self.total_qkv_size = self.qkv_size * num_heads # denoted as F
+		self.num_heads = num_heads
+		self.qkv_layer = nn.Linear(self.mem_size,self.total_qkv_size,bias=False)
+		self.qkv_layernorm = nn.LayerNorm([self.mem_slots_plus_input,self.total_qkv_size])
+		self.softmax = nn.Softmax(dim=-1)
 		self.att_layernorm1 = nn.LayerNorm([self.mem_slots,self.mem_size])
 		self.att_layernorm2 = nn.LayerNorm([self.mem_slots,self.mem_size])
-		self.mlp_layers = MultiLayerPerceptron(hidden_sizes=[self.mem_size,2*self.mem_size,self.mem_size]) # multi layer perceptron module
+		self.mlp_layers = MultiLayerPerceptron(hidden_sizes=[self.mem_size,self.mem_size,self.mem_size]) # multi layer perceptron module
+
+		# gates
 		if self.num_gates > 0:
 			self.i2g = nn.Linear(self.mem_size,self.num_gates) # from input (with mem_size) to gate
 			self.m2g = nn.Linear(self.mem_size,self.num_gates) # form memory to gate
@@ -160,22 +178,26 @@ class RelationalRNNCell(nn.Module):
 		# biases for gates
 		self.forget_bias = nn.Parameter(torch.tensor(1.0,dtype=torch.float32))
 		self.input_bias = nn.Parameter(torch.tensor(0.0,dtype=torch.float32))
+
+		# output size
 		self._output_size = self.mem_size * self.mem_slots
 
 	def forward(self,x,memory=None):
 		if memory is None:
-			memory = self.initMemory(x)
+			raise ValueError("Memory is not initialized please do first by calling initMemory(batch_size)")
 		x = self.activation(self.i2m(x)).unsqueeze(1)
-		next_memory = self.attend_over_memory(x,memory)
-		if self.gate_type == 'unit' or self.gate_type == 'memory':
+		memory_plus_input = torch.cat([memory,x],dim=1)
+		next_memory = self.attend_over_memory(memory_plus_input)
+		# cut out the memory from concatenated memory and input
+		next_memory = next_memory[:,:-x.size(1),:]
+		if self.gate_type == "unit" or self.gate_type == "memory":
 			next_memory = self.apply_gates(x,memory,next_memory)
 		return next_memory
 
-	def attend_over_memory(self,x,memory):
+	def attend_over_memory(self,memory):
 		for _ in range(self.num_attention_blocks):
-			memory_plus_input = torch.cat([memory,x],dim=1)
 			# attend to memory and a skip connection
-			memory = self.attention(memory,memory_plus_input) + memory
+			memory = self.multihead_attention(memory) + memory
 			# add layernorm
 			memory = self.att_layernorm1(memory)
 			# skip connection to mlp output
@@ -184,12 +206,54 @@ class RelationalRNNCell(nn.Module):
 			memory = self.att_layernorm2(memory)
 		return memory
 
+	def multihead_attention(self,memory):
+		"""
+		Perform multi-head attention from the paper 'Attention is All You Need'
+		Arxiv url: https://arxiv.org/abs/1706.03762
+		
+		Args:
+		  memory: Memory tensor to perform attention on.
+		Returns:
+		  next_memory: Next memory tensor.
+		"""
+		
+		qkv = self.qkv_layer(memory)
+		qkv = self.qkv_layernorm(qkv)
+		
+		# split the qkv to multiple heads H
+		# [B, N, F] => [B, N, H, F/H]
+		qkv = qkv.view(qkv.size(0),self.mem_slots_plus_input,self.num_heads,self.qkv_size)
+
+		# [B, N, H, F/H] => [B, H, N, F/H]
+		qkv = qkv.permute(0,2,1,3)
+
+		# split into query, key and value
+		# [B, H, N, head_size], [B, H, N, head_size], [B, H, N, head_size]
+		q,k,v = torch.split(qkv,[self.head_size,self.head_size,self.head_size],-1)
+
+		# scale q with d_k, the dimensionality of the key vectors
+		q *= (self.head_size ** -0.5)
+
+		# make it [B, H, N, N]
+		att = torch.matmul(q,k.permute(0,1,3,2))
+		att = self.softmax(att)
+
+		# output is [B, H, N, V]
+		next_memory = torch.matmul(att,v)
+
+		# [B, H, N, V] => [B, N, H, V] => [B, N, H*V]
+		next_memory = next_memory.permute(0,2,1,3)
+		next_memory = next_memory.view(next_memory.shape[0],next_memory.shape[1],-1)
+		return next_memory
+
+
 	def apply_gates(self,x,memory,next_memory):
 		memory = torch.tanh(memory)
 		gate_x = self.i2g(x)
 		gate_mem = self.m2g(memory)
 		gates = gate_x + gate_mem
-		input_gate, forget_gate = torch.split(gates,split_size_or_sections=int(self.num_gates/2),dim=2)
+		# split gates into input gate and forget gate
+		input_gate,forget_gate = torch.split(gates,split_size_or_sections=int(self.num_gates/2),dim=2)
 		input_gate = torch.sigmoid(input_gate + self.input_bias)
 		forget_gate = torch.sigmoid(forget_gate + self.forget_bias)
 		next_memory = input_gate * torch.tanh(next_memory)
@@ -204,10 +268,17 @@ class RelationalRNNCell(nn.Module):
 		else:
 			return 0
 
-	def initMemory(self,x):
-		eye = x.new_zeros(self.mem_slots,self.mem_size)
-		nn.init.eye_(eye)
-		return eye.unsqueeze(0).expand(x.size(0),-1,-1)
+	def initMemory(self,batch_size):
+		init_memory = torch.stack([torch.eye(self.mem_slots) for _ in range(batch_size)])
+		# pad the matrix with zeros
+		if self.mem_size > self.mem_slots:
+			difference = self.mem_size - self.mem_slots
+			pad = torch.zeros((batch_size,self.mem_slots,difference))
+			init_memory = torch.cat([init_memory,pad],-1)
+		# take the first "self.mem_size" components
+		elif self.mem_size < self.mem_slots:
+			init_memory = init_memory[:,:,:self.mem_size]
+		return init_memory
 
 	@property
 	def output_size(self):
@@ -215,38 +286,3 @@ class RelationalRNNCell(nn.Module):
 
 	def __repr__(self):
 		return self.__class__.__name__ +"(memory_size = [?,{},{}])".format(self.mem_slots,self.mem_size)
-	
-
-class MultiHeadAttention(nn.Module):
-	def __init__(self,hidden_size,num_heads=8):
-		super().__init__()
-		assert hidden_size % num_heads == 0
-		self.hidden_size = hidden_size
-		self.num_heads = num_heads
-		self.query_layer = nn.Linear(hidden_size,hidden_size,bias=False)
-		self.key_layer = nn.Linear(hidden_size,hidden_size,bias=False)
-		self.value_layer = nn.Linear(hidden_size,hidden_size,bias=False)
-		self.softmax = nn.Softmax(dim=-1)
-
-	def forward(self,query,value):
-		Q = self.query_layer(query)
-		K = self.key_layer(value)
-		V = self.value_layer(value)
-		d_k_sqrt = self.hidden_size**(-0.5)
-		# split Q,K and V into num_heads values from dim=2 and merge in dim=0
-		chunk_size = int(self.hidden_size/self.num_heads)
-		Q = torch.cat(Q.split(split_size=chunk_size,dim=2),dim=0)
-		K = torch.cat(K.split(split_size=chunk_size,dim=2),dim=0)
-		V = torch.cat(V.split(split_size=chunk_size,dim=2),dim=0)
-		# calculate attention (QK^T)
-		att = torch.matmul(Q,K.transpose(1,2))
-		# and normalize
-		att = d_k_sqrt * att
-		# apply softmax
-		att = self.softmax(att)
-		# multiply with V
-		att = torch.matmul(att,V)
-		# restore original size
-		original_chunk_size = int(att.size(0)/self.num_heads)
-		att = torch.cat(att.split(split_size=original_chunk_size,dim=0),dim=2)
-		return att

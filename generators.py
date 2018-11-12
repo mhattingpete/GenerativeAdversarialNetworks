@@ -291,20 +291,24 @@ class GumbelRelRNNGenerator(nn.Module):
 		self.activation = activation
 		self.last_activation = GumbelSoftmax(device)
 		self.EOS_TOKEN = output_size-1
+		self.memory = None
 
 	def forward(self,z,num_steps,temperature,x=None):
+		batch_size = z.size(0)
+		if self.memory is None:
+			self.initMemory(batch_size)
 		predictions = []
 		z = self.batchnorm1(self.activation(self.z2m(z)))
-		mem = z.unsqueeze(1).expand(-1,self.mem_slots,-1) # initialize the hidden state
-		mem = mem.detach()
-		previous_output = torch.zeros(z.size(0),dtype=torch.long).to(self.device)
+		# detach memory such that we don't backprop through the whole dataset
+		self.memory = self.memory.detach()
+		previous_output = torch.zeros(batch_size,dtype=torch.long).to(self.device)
 		previous_output[:] = self.EOS_TOKEN # <EOS> token
 		for i in range(num_steps):
 			previous_output = self.activation(self.embedding(previous_output))
 			step_input = torch.cat([previous_output,z],dim=1)
 			step_input = self.batchnorm2(step_input)
-			mem = self.relRNN(step_input,mem)
-			out = self.m2o(mem.view(mem.size(0),-1))
+			self.memory = self.relRNN(step_input,self.memory)
+			out = self.m2o(self.memory.view(self.memory.size(0),-1))
 			out = self.last_activation(out,temperature)
 			if x is not None: # teacher forcing
 				previous_output = x[:,i]
@@ -313,3 +317,6 @@ class GumbelRelRNNGenerator(nn.Module):
 			predictions.append(out)
 		output = torch.stack(predictions).transpose(1,0)
 		return output
+
+	def initMemory(self,batch_size):
+		self.memory = self.relRNN.initMemory(batch_size)
