@@ -296,7 +296,7 @@ class GumbelRelRNNGenerator(nn.Module):
 	def forward(self,z,num_steps,temperature,x=None):
 		batch_size = z.size(0)
 		if self.memory is None:
-			self.initMemory(batch_size)
+			raise ValueError("Memory not initialized. Please do this before running forward.")
 		predictions = []
 		z = self.batchnorm1(self.activation(self.z2m(z)))
 		# detach memory such that we don't backprop through the whole dataset
