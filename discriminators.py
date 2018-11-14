@@ -217,13 +217,13 @@ class GumbelSARNNDiscriminator(nn.Module):
 		_,x = self.rnn(x)
 		return x.view(-1,self.output_size)
 
-class GumbelRelDiscriminator(nn.Module):
+class GumbelRelRNNDiscriminator(nn.Module):
 	def __init__(self,input_size,hidden_size,output_size,activation=nn.LeakyReLU(0.2),num_embeddings=6):
 		super().__init__()
 		# layers
 		self.num_embeddings = num_embeddings
 		self.output_size = output_size
-		self.embeddings = nn.ModuleList([nn.Sequential(nn.Linear(input_size,hidden_size),nn.BatchNorm1d(hidden_size)) for _ in num_embeddings])
+		self.embeddings = nn.ModuleList([nn.Sequential(nn.Linear(input_size,hidden_size),activation) for _ in range(num_embeddings)])
 		self.attention = SelfAttention(hidden_size,layer_type="conv1d")
 		self.batchnorm2 = nn.BatchNorm1d(hidden_size)
 		self.activation = activation
@@ -232,7 +232,7 @@ class GumbelRelDiscriminator(nn.Module):
 	def forward(self,x):
 		x_embedded = []
 		for l in self.embeddings:
-			x_emb = self.batchnorm1(self.activation(l(x)).transpose(2,1))
+			x_emb = l(x).transpose(2,1)
 			x_emb = self.batchnorm2(self.activation(self.attention(x_emb))).transpose(1,2)
 			_,x_emb = self.rnn(x_emb)
 			x_embedded.append(x_emb)

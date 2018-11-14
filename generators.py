@@ -273,7 +273,7 @@ class GumbelSARNNGenerator(nn.Module):
 		return output
 
 class GumbelRelRNNGenerator(nn.Module):
-	def __init__(self,mem_slots,head_size,num_heads,noise_size,output_size,device,activation=nn.LeakyReLU(0.2),gate_type="memory"):
+	def __init__(self,mem_slots,head_size,num_heads,noise_size,output_size,device,activation=nn.LeakyReLU(0.2),gate_type="memory",dropout_prob=0.2):
 		super().__init__()
 		self.device = device
 		# internal variable sizes
@@ -282,6 +282,7 @@ class GumbelRelRNNGenerator(nn.Module):
 		step_input_size = hidden_size + hidden_size
 		self.mem_slots = mem_slots
 		# layer definitions
+		self.input_dropout = nn.Dropout(p=dropout_prob)
 		self.z2m = nn.Linear(noise_size,hidden_size)
 		self.batchnorm1 = nn.BatchNorm1d(hidden_size)
 		self.embedding = nn.Embedding(output_size,hidden_size)
@@ -304,6 +305,8 @@ class GumbelRelRNNGenerator(nn.Module):
 		previous_output[:] = self.EOS_TOKEN # <EOS> token
 		for i in range(num_steps):
 			previous_output = self.activation(self.embedding(previous_output))
+			if x is not None:
+				previous_output = self.input_dropout(previous_output)
 			step_input = torch.cat([previous_output,z],dim=1)
 			step_input = self.batchnorm2(step_input)
 			memory = self.relRNN(step_input,memory)
@@ -312,7 +315,7 @@ class GumbelRelRNNGenerator(nn.Module):
 			if x is not None: # teacher forcing
 				previous_output = x[:,i]
 			else: # use prediction as input
-				previous_output = torch.argmax(out,dim=-1)
+				previous_output = torch.argmax(out,dim=-1).detach()
 			predictions.append(out)
 		output = torch.stack(predictions).transpose(1,0)
 		return output, memory

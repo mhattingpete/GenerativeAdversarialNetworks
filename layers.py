@@ -268,16 +268,20 @@ class RelationalRNNCell(nn.Module):
 		else:
 			return 0
 
-	def initMemory(self,batch_size):
-		init_memory = torch.stack([torch.eye(self.mem_slots) for _ in range(batch_size)])
-		# pad the matrix with zeros
-		if self.mem_size > self.mem_slots:
-			difference = self.mem_size - self.mem_slots
-			pad = torch.zeros((batch_size,self.mem_slots,difference))
-			init_memory = torch.cat([init_memory,pad],-1)
-		# take the first "self.mem_size" components
-		elif self.mem_size < self.mem_slots:
-			init_memory = init_memory[:,:,:self.mem_size]
+	def initMemory(self,batch_size,init_method="normal"):
+		assert init_method in ["normal","eye"]
+		if init_method == "normal":
+			init_memory = torch.randn(batch_size,self.mem_slots,self.mem_size)
+		elif init_method == "eye":
+			init_memory = torch.stack([torch.eye(self.mem_slots) for _ in range(batch_size)])
+			# pad the matrix with zeros
+			if self.mem_size > self.mem_slots:
+				difference = self.mem_size - self.mem_slots
+				pad = torch.zeros((batch_size,self.mem_slots,difference))
+				init_memory = torch.cat([init_memory,pad],-1)
+			# take the first "self.mem_size" components
+			elif self.mem_size < self.mem_slots:
+				init_memory = init_memory[:,:,:self.mem_size]
 		return init_memory
 
 	@property
