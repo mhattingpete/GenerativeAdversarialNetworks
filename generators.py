@@ -195,28 +195,29 @@ class GumbelRNNGenerator(nn.Module):
 		step_input_size = hidden_size + hidden_size
 		# layer definitions
 		self.z2h = nn.Linear(noise_size,hidden_size)
+		self.batchnorm1 = nn.BatchNorm1d(hidden_size)
 		self.embedding = nn.Embedding(output_size,hidden_size)
-		self.batchnorm1 = nn.BatchNorm1d(step_input_size)
+		self.batchnorm2 = nn.BatchNorm1d(step_input_size)
 		self.gru = nn.GRUCell(step_input_size,hidden_size)
 		self.h2o = nn.Linear(hidden_size,output_size)
-		self.batchnorm2 = nn.BatchNorm1d(hidden_size)
+		self.batchnorm3 = nn.BatchNorm1d(hidden_size)
 		self.activation = activation
 		self.last_activation = GumbelSoftmax(device)
 		self.EOS_TOKEN = output_size-1
 
 	def forward(self,z,num_steps,temperature,x=None):
 		predictions = []
-		z = self.activation(self.z2h(z))
+		z = self.batchnorm1(self.activation(self.z2h(z)))
 		h = z # initialize the hidden state
 		previous_output = torch.zeros(z.size(0),dtype=torch.long).to(self.device)
 		previous_output[:] = self.EOS_TOKEN # <EOS> token
 		for i in range(num_steps):
 			previous_output = self.activation(self.embedding(previous_output))
 			step_input = torch.cat([previous_output,z],dim=1)
-			step_input = self.batchnorm1(step_input)
+			step_input = self.batchnorm2(step_input)
 			h = self.gru(step_input,h)
 			out = self.activation(h)
-			out = self.batchnorm2(out)
+			out = self.batchnorm3(out)
 			out = self.h2o(out)
 			out = self.last_activation(out,temperature)
 			if x is not None: # teacher forcing
@@ -295,11 +296,10 @@ class GumbelRelRNNGenerator(nn.Module):
 
 	def forward(self,z,num_steps,temperature,x=None,memory=None):
 		batch_size = z.size(0)
-		if memory is None:
-			raise ValueError("Memory not initialized. Please do this before running forward.")
 		predictions = []
 		z = self.batchnorm1(self.activation(self.z2m(z)))
 		# detach memory such that we don't backprop through the whole dataset
+		memory = self.initMemory(batch_size).to(self.device)
 		memory = memory.detach()
 		previous_output = torch.zeros(batch_size,dtype=torch.long).to(self.device)
 		previous_output[:] = self.EOS_TOKEN # <EOS> token
@@ -318,7 +318,8 @@ class GumbelRelRNNGenerator(nn.Module):
 				previous_output = torch.argmax(out,dim=-1).detach()
 			predictions.append(out)
 		output = torch.stack(predictions).transpose(1,0)
-		return output, memory
+		del memory
+		return output
 
 	def initMemory(self,batch_size):
 		return self.relRNN.initMemory(batch_size)

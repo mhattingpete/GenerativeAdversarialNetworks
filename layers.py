@@ -120,8 +120,18 @@ class GumbelSoftmax(nn.Module):
 	def forward(self,x,temperature):
 		eps = 1e-20
 		g = -torch.log(-torch.log(torch.rand(*x.shape,device=self.device)+eps)+eps)
+		if torch.isnan(g).any():
+			print("Gumbel error")
+			print(g)
+			assert False
 		gumbel_sample = x + g
-		return self.softmax(gumbel_sample*temperature)
+		out = self.softmax(gumbel_sample*temperature)
+		if (out<0).any():
+			print("Gumbel error 2")
+			print(x)
+			print(out)
+			assert False
+		return out
 
 	def __repr__(self):
 		return self.__class__.__name__ +"()"

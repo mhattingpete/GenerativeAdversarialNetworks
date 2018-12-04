@@ -18,9 +18,6 @@ def sample_noise(num_samples,noise_dim,device):
 	'''
 	return torch.randn(num_samples,noise_dim).to(device)
 
-def sample_sequence_noise(num_samples,num_steps,noise_dim,device):
-	return torch.randn(num_samples,num_steps,noise_dim).to(device)
-
 def true_target(num_samples,device):
 	'''
 	Tensor of ones to match the true target

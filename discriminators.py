@@ -190,12 +190,12 @@ class GumbelRNNDiscriminator(nn.Module):
 		# layers
 		self.output_size = output_size
 		self.embedding = nn.Linear(input_size,hidden_size)
+		self.batchnorm = nn.BatchNorm1d(hidden_size)
 		self.activation = activation
 		self.rnn = nn.GRU(hidden_size,output_size,batch_first=True)
 
 	def forward(self,x):
-		x = self.embedding(x)
-		x = self.activation(x)
+		x = self.batchnorm(self.activation(self.embedding(x)).transpose(2,1)).transpose(1,2)
 		_,x = self.rnn(x)
 		return x.view(-1,self.output_size)
 
