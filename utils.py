@@ -1,4 +1,23 @@
 import torch
+import os
+import errno
+
+def save_model(model,model_save_path):
+	create_dir(model_save_path)
+	torch.save(model.state_dict(),os.path.join(model_save_path,model.__class__.__name__))
+
+def load_model(model,model_load_path):
+	try:
+		model.load_state_dict(torch.load(model_load_path))
+	except Exception:
+		raise
+
+def create_dir(path):
+	try:
+		os.mkdir(path)
+	except OSError as e:
+		if e.errno != errno.EEXIST:
+			raise
 
 def img2vec(img):
 	'''

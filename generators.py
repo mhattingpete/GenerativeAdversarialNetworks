@@ -3,7 +3,7 @@ from torch import nn
 import torch
 
 # local imports
-from layers import MultiLayerPerceptron,PixelwiseNormalization,Conv2dEqualized,SelfAttention,GumbelSoftmax,RelationalRNNCell
+from layers import MultiLayerPerceptron,PixelwiseNormalization,Conv2dEqualized,SelfAttention,GumbelSoftmax,RelationalRNNCell,MemoryLayer
 
 #######################################
 #####    Unconditional models     #####
@@ -323,3 +323,16 @@ class GumbelRelRNNGenerator(nn.Module):
 
 	def initMemory(self,batch_size):
 		return self.relRNN.initMemory(batch_size)
+
+class MemoryGenerator(nn.Module):
+	def __init__(self,hidden_size,noise_size,output_size,max_seq_len,device,activation=nn.LeakyReLU(0.2),num_heads=8,similarity=nn.CosineSimilarity(dim=-1)):
+		super().__init__()
+		self.device = device
+		# layer definitions
+		self.memory_layer = MemoryLayer(hidden_size,noise_size,output_size,max_seq_len,device,num_heads=num_heads,activation=activation)
+		self.activation = activation
+		self.last_activation = GumbelSoftmax(device)
+
+	def forward(self,z,num_steps,temperature,x=None):
+		output = self.last_activation(self.memory_layer(z,num_steps,temperature,x=x),temperature)
+		return output
