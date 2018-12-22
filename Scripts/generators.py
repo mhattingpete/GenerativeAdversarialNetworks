@@ -187,7 +187,7 @@ class CondConvGenerator(nn.Module):
 #######################################
 
 class GumbelRNNGenerator(nn.Module):
-	def __init__(self,hidden_size,noise_size,output_size,device,activation=nn.LeakyReLU(0.2)):
+	def __init__(self,hidden_size,noise_size,output_size,device,activation=nn.LeakyReLU(0.2),SOS_TOKEN=None):
 		super().__init__()
 		self.device = device
 		# internal variable sizes
@@ -203,14 +203,14 @@ class GumbelRNNGenerator(nn.Module):
 		self.batchnorm3 = nn.BatchNorm1d(hidden_size)
 		self.activation = activation
 		self.last_activation = GumbelSoftmax(device)
-		self.EOS_TOKEN = output_size-1
+		self.SOS_TOKEN = SOS_TOKEN if SOS_TOKEN else output_size-1
 
 	def forward(self,z,num_steps,temperature,x=None):
 		predictions = []
 		z = self.batchnorm1(self.activation(self.z2h(z)))
 		h = z # initialize the hidden state
 		previous_output = torch.zeros(z.size(0),dtype=torch.long).to(self.device)
-		previous_output[:] = self.EOS_TOKEN # <EOS> token
+		previous_output[:] = self.SOS_TOKEN # <sos> token
 		for i in range(num_steps):
 			previous_output = self.activation(self.embedding(previous_output))
 			step_input = torch.cat([previous_output,z],dim=1)
@@ -229,7 +229,7 @@ class GumbelRNNGenerator(nn.Module):
 		return output
 
 class GumbelSARNNGenerator(nn.Module):
-	def __init__(self,hidden_size,noise_size,output_size,device,activation=nn.LeakyReLU(0.2)):
+	def __init__(self,hidden_size,noise_size,output_size,device,activation=nn.LeakyReLU(0.2),SOS_TOKEN=None):
 		super().__init__()
 		self.device = device
 		# internal variable sizes
@@ -247,7 +247,7 @@ class GumbelSARNNGenerator(nn.Module):
 		self.batchnorm4 = nn.BatchNorm1d(hidden_size)
 		self.activation = activation
 		self.last_activation = GumbelSoftmax(device)
-		self.EOS_TOKEN = output_size-1
+		self.SOS_TOKEN = SOS_TOKEN if SOS_TOKEN else output_size-1
 
 	def forward(self,z,num_steps,temperature,x=None):
 		predictions = []
@@ -255,7 +255,7 @@ class GumbelSARNNGenerator(nn.Module):
 		z = self.batchnorm2(self.activation(self.attention(z)))
 		h = z # initialize the hidden state
 		previous_output = torch.zeros(z.size(0),dtype=torch.long).to(self.device)
-		previous_output[:] = self.EOS_TOKEN # <EOS> token
+		previous_output[:] = self.EOS_TOKEN # <sos> token
 		for i in range(num_steps):
 			previous_output = self.activation(self.embedding(previous_output))
 			step_input = torch.cat([previous_output,z],dim=1)
@@ -274,7 +274,7 @@ class GumbelSARNNGenerator(nn.Module):
 		return output
 
 class GumbelRelRNNGenerator(nn.Module):
-	def __init__(self,mem_slots,head_size,num_heads,noise_size,output_size,device,activation=nn.LeakyReLU(0.2),gate_type="memory",dropout_prob=0.2):
+	def __init__(self,mem_slots,head_size,num_heads,noise_size,output_size,device,activation=nn.LeakyReLU(0.2),gate_type="memory",dropout_prob=0.2,SOS_TOKEN=None):
 		super().__init__()
 		self.device = device
 		# internal variable sizes
@@ -292,7 +292,7 @@ class GumbelRelRNNGenerator(nn.Module):
 		self.m2o = nn.Linear(mem_slots*hidden_size,output_size)
 		self.activation = activation
 		self.last_activation = GumbelSoftmax(device)
-		self.EOS_TOKEN = output_size-1
+		self.SOS_TOKEN = SOS_TOKEN if SOS_TOKEN else output_size-1
 
 	def forward(self,z,num_steps,temperature,x=None,memory=None):
 		batch_size = z.size(0)
@@ -302,7 +302,7 @@ class GumbelRelRNNGenerator(nn.Module):
 		memory = self.initMemory(batch_size).to(self.device)
 		memory = memory.detach()
 		previous_output = torch.zeros(batch_size,dtype=torch.long).to(self.device)
-		previous_output[:] = self.EOS_TOKEN # <EOS> token
+		previous_output[:] = self.EOS_TOKEN # <sos> token
 		for i in range(num_steps):
 			previous_output = self.activation(self.embedding(previous_output))
 			if x is not None:
@@ -325,11 +325,12 @@ class GumbelRelRNNGenerator(nn.Module):
 		return self.relRNN.initMemory(batch_size)
 
 class MemoryGenerator(nn.Module):
-	def __init__(self,hidden_size,noise_size,output_size,max_seq_len,device,activation=nn.LeakyReLU(0.2),num_heads=8,similarity=nn.CosineSimilarity(dim=-1)):
+	def __init__(self,hidden_size,noise_size,output_size,max_seq_len,device,activation=nn.LeakyReLU(0.2),num_heads=8,similarity=nn.CosineSimilarity(dim=-1),SOS_TOKEN=None):
 		super().__init__()
 		self.device = device
 		# layer definitions
-		self.memory_layer = MemoryLayer(hidden_size,noise_size,output_size,max_seq_len,device,num_heads=num_heads,activation=activation)
+		SOS_TOKEN = SOS_TOKEN if SOS_TOKEN else output_size-1
+		self.memory_layer = MemoryLayer(hidden_size,noise_size,output_size,max_seq_len,device,SOS_TOKEN,num_heads=num_heads,activation=activation)
 		self.activation = activation
 		self.last_activation = GumbelSoftmax(device)
 

@@ -1,6 +1,10 @@
 import torch
 from torch import nn
 
+######################################
+####        Standard layers        ###
+######################################
+
 class MultiLayerPerceptron(nn.Module):
 	def __init__(self,hidden_sizes,activation=nn.ELU(),dropout_prob=0.1,last_activation=nn.ELU()):
 		super().__init__()
@@ -48,6 +52,24 @@ class LinearEqualized(nn.Module):
 	def forward(self,x):
 		x = self.linear(x.mul(self.scale))
 		return x+self.bias.view(1,-1).expand_as(x)
+
+
+class PositionWiseLinear(nn.Module):
+	def __init__(self,input_size,hidden_size,output_size):
+		super().__init__()
+		self.layers = nn.Sequential([
+			nn.Linear(input_size,hidden_size),
+			nn.ReLU(),
+			nn.Linear(hidden_size,output_size)
+			])
+
+	def forward(self,x):
+		return self.layers(x)
+
+
+######################################
+####       Normalizing layers      ###
+######################################
 
 class MiniBatchStd(nn.Module):
 	def __init__(self):
@@ -111,6 +133,11 @@ class SelfAttention(nn.Module):
 	def __repr__(self):
 		return self.__class__.__name__ +"(hidden_size = {})".format(self.hidden_size)
 
+
+######################################
+####      Activation functions     ###
+######################################
+
 class GumbelSoftmax(nn.Module):
 	def __init__(self,device):
 		super().__init__()
@@ -126,6 +153,11 @@ class GumbelSoftmax(nn.Module):
 
 	def __repr__(self):
 		return self.__class__.__name__ +"()"
+
+
+######################################
+####        Recurrent layers       ###
+######################################
 
 class RelationalRNNCell(nn.Module):
 	def __init__(self,input_size,mem_slots,head_size,num_heads=8,gate_type=None,num_attention_blocks=3,activation=nn.ELU()):
@@ -292,8 +324,13 @@ class RelationalRNNCell(nn.Module):
 	def __repr__(self):
 		return self.__class__.__name__ +"(memory_size = [?,{},{}])".format(self.mem_slots,self.mem_size)
 
+
+######################################
+####         Memory layers         ###
+######################################
+
 class MemoryLayer(nn.Module):
-	def __init__(self,hidden_size,noise_size,output_size,max_seq_len,device,activation=nn.LeakyReLU(0.2),num_heads=8,similarity=nn.CosineSimilarity(dim=-1)):
+	def __init__(self,hidden_size,noise_size,output_size,max_seq_len,device,SOS_TOKEN,activation=nn.LeakyReLU(0.2),num_heads=8,similarity=nn.CosineSimilarity(dim=-1)):
 		super().__init__()
 		self.device = device
 		# internal variable sizes
@@ -311,7 +348,7 @@ class MemoryLayer(nn.Module):
 		self.batchnorm3 = nn.BatchNorm1d(hidden_size)
 		self.activation = activation
 		self.softmax = nn.Softmax(dim=-1)
-		self.EOS_TOKEN = output_size-1
+		self.SOS_TOKEN = SOS_TOKEN
 		self.linear = nn.Linear(output_size,output_size*num_heads)
 		self.max_seq_len = max_seq_len
 		self.memory = nn.Parameter(torch.randn(1,self.max_seq_len,step_input_size))
@@ -329,7 +366,7 @@ class MemoryLayer(nn.Module):
 		memory = memory[:num_steps,:]
 		memory = memory.expand(z.size(0),-1,-1) # copy the memory for each batch position
 		previous_output = torch.zeros(z.size(0),dtype=torch.long).to(self.device)
-		previous_output[:] = self.EOS_TOKEN # <EOS> token
+		previous_output[:] = self.SOS_TOKEN # <sos> token
 		# run rnn
 		for i in range(num_steps):
 			# for the input
@@ -361,7 +398,61 @@ class MemoryLayer(nn.Module):
 		output = self.similarity(output,memory) # now output is [batch,num_steps,output_size]
 		return output
 
-class MemN2N(nn.Module):
+
+######################################
+####       Attention layers        ###
+######################################
+
+class Multihead_attention(nn.Module):
 	def __init__(self):
 		super().__init__()
-		raise NotImplementedError
+		self.mem_slots = mem_slots # denoted as N
+		self.mem_size = head_size * num_heads
+		self.head_size = head_size
+		self.qkv_size = 3 * head_size
+		self.total_qkv_size = self.qkv_size * num_heads # denoted as F
+		self.num_heads = num_heads
+		self.qkv_layer = nn.Linear(self.mem_size,self.total_qkv_size,bias=False)
+		self.qkv_layernorm = nn.LayerNorm([self.mem_slots_plus_input,self.total_qkv_size])
+		self.softmax = nn.Softmax(dim=-1)
+
+
+def multihead_attention(self,memory):
+	"""
+	Perform multi-head attention from the paper 'Attention is All You Need'
+	Arxiv url: https://arxiv.org/abs/1706.03762
+	
+	Args:
+	  memory: Memory tensor to perform attention on.
+	Returns:
+	  next_memory: Next memory tensor.
+	"""
+	
+	qkv = self.qkv_layer(memory)
+	qkv = self.qkv_layernorm(qkv)
+	
+	# split the qkv to multiple heads H
+	# [B, N, F] => [B, N, H, F/H]
+	qkv = qkv.view(qkv.size(0),self.mem_slots,self.num_heads,self.qkv_size)
+
+	# [B, N, H, F/H] => [B, H, N, F/H]
+	qkv = qkv.permute(0,2,1,3)
+
+	# split into query, key and value
+	# [B, H, N, head_size], [B, H, N, head_size], [B, H, N, head_size]
+	q,k,v = torch.split(qkv,[self.head_size,self.head_size,self.head_size],-1)
+
+	# scale q with d_k, the dimensionality of the key vectors
+	q *= (self.head_size ** -0.5)
+
+	# make it [B, H, N, N]
+	att = torch.matmul(q,k.permute(0,1,3,2))
+	att = self.softmax(att)
+
+	# output is [B, H, N, V]
+	next_memory = torch.matmul(att,v)
+
+	# [B, H, N, V] => [B, N, H, V] => [B, N, H*V]
+	next_memory = next_memory.permute(0,2,1,3).contiguous()
+	next_memory = next_memory.view(next_memory.shape[0],next_memory.shape[1],-1)
+	return next_memory
