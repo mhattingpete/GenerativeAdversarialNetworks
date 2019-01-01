@@ -255,7 +255,7 @@ class GumbelSARNNGenerator(nn.Module):
 		z = self.batchnorm2(self.activation(self.attention(z)))
 		h = z # initialize the hidden state
 		previous_output = torch.zeros(z.size(0),dtype=torch.long).to(self.device)
-		previous_output[:] = self.EOS_TOKEN # <sos> token
+		previous_output[:] = self.SOS_TOKEN # <sos> token
 		for i in range(num_steps):
 			previous_output = self.activation(self.embedding(previous_output))
 			step_input = torch.cat([previous_output,z],dim=1)
@@ -302,7 +302,7 @@ class GumbelRelRNNGenerator(nn.Module):
 		memory = self.initMemory(batch_size).to(self.device)
 		memory = memory.detach()
 		previous_output = torch.zeros(batch_size,dtype=torch.long).to(self.device)
-		previous_output[:] = self.EOS_TOKEN # <sos> token
+		previous_output[:] = self.SOS_TOKEN # <sos> token
 		for i in range(num_steps):
 			previous_output = self.activation(self.embedding(previous_output))
 			if x is not None:

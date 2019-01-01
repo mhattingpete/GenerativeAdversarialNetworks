@@ -362,7 +362,7 @@ class MemoryLayer(nn.Module):
 		z = self.batchnorm1(self.activation(self.z2h(z)))
 		h = z # initialize the hidden state
 		m = z # initialize the hidden state for memory
-		memory = self.memory[:,torch.randperm(self.max_seq_len),:]
+		memory = self.memory
 		memory = memory[:num_steps,:]
 		memory = memory.expand(z.size(0),-1,-1) # copy the memory for each batch position
 		previous_output = torch.zeros(z.size(0),dtype=torch.long).to(self.device)
