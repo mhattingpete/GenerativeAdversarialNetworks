@@ -17,3 +17,15 @@ def plotSamples(x,xu=None,yu=1,max_print=100,title="Data"):
 		ax.set_xlim([0,xu])
 		ax.set_ylim([0,yu])
 		ax.axis('off')
+
+def tensor_to_words(batch,num_to_word_vocab):
+	text_translated = []
+	for line in batch:
+		line_translated = []
+		for word in line:
+			word_tranlated = num_to_word_vocab[word.numpy().tolist()]
+			if word_tranlated in ["<sos>","<eos>","<pad>"]:
+				continue
+			line_translated.append(word_tranlated)
+		text_translated.append(" ".join(line_translated))
+	return "\n".join(text_translated)

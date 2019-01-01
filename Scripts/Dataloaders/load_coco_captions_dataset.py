@@ -34,8 +34,10 @@ def create_dataset(path_to_dataset,batch_size,split_ratio=0.7,min_vocab_freq=10,
 
 	train_iter,val_iter = BucketIterator.splits((train,val),repeat=False,batch_size=batch_size)
 	test_iter = BucketIterator(test,batch_size=batch_size,repeat=False,train=False)
-	return {"data_iters":(train_iter,val_iter,test_iter),"fields":text_field,"num_classes":len(text_field.vocab),
-	"tokens":(SOS_TOKEN,EOS_TOKEN,UNK_TOKEN,PAD_TOKEN),"max_seq_len":dataset.max_seq_len}
+	vocab_dict = text_field.vocab.stoi
+	return {"data_iters":(train_iter,val_iter,test_iter),"fields":text_field,
+	"word_to_num_vocab":vocab_dict,"num_to_word_vocab":{y:x for x,y in vocab_dict.items()},
+	"num_classes":len(text_field.vocab),"tokens":(SOS_TOKEN,EOS_TOKEN,UNK_TOKEN,PAD_TOKEN),"max_seq_len":dataset.max_seq_len}
 
 """
 print("Start iterating through data")

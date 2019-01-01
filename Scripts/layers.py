@@ -139,14 +139,13 @@ class SelfAttention(nn.Module):
 ######################################
 
 class GumbelSoftmax(nn.Module):
-	def __init__(self,device):
+	def __init__(self):
 		super().__init__()
 		self.softmax = nn.Softmax(dim=-1)
-		self.device = device
 
 	def forward(self,x,temperature):
 		eps = 1e-20
-		g = -torch.log(-torch.log(torch.rand(*x.shape,device=self.device)+eps)+eps)
+		g = -torch.log(-torch.log(torch.rand_like(x)+eps)+eps)
 		gumbel_sample = x + g
 		out = self.softmax(gumbel_sample*temperature)
 		return out
@@ -330,9 +329,8 @@ class RelationalRNNCell(nn.Module):
 ######################################
 
 class MemoryLayer(nn.Module):
-	def __init__(self,hidden_size,noise_size,output_size,max_seq_len,device,SOS_TOKEN,activation=nn.LeakyReLU(0.2),num_heads=8,similarity=nn.CosineSimilarity(dim=-1)):
+	def __init__(self,hidden_size,noise_size,output_size,max_seq_len,SOS_TOKEN,activation=nn.LeakyReLU(0.2),num_heads=8,similarity=nn.CosineSimilarity(dim=-1)):
 		super().__init__()
-		self.device = device
 		# internal variable sizes
 		self.hidden_size = hidden_size
 		step_input_size = hidden_size + hidden_size
@@ -365,7 +363,7 @@ class MemoryLayer(nn.Module):
 		memory = self.memory
 		memory = memory[:num_steps,:]
 		memory = memory.expand(z.size(0),-1,-1) # copy the memory for each batch position
-		previous_output = torch.zeros(z.size(0),dtype=torch.long).to(self.device)
+		previous_output = z.new_zeros(size=(z.size(0),),dtype=torch.long)
 		previous_output[:] = self.SOS_TOKEN # <sos> token
 		# run rnn
 		for i in range(num_steps):

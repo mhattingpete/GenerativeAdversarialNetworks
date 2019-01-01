@@ -1,0 +1,39 @@
+{
+	"CUDA_VISIBLE_DEVICES":"1",
+	"train_config":{
+		"num_epochs":200,
+		"epochs_pretrain":100,
+		"max_temperature":2,
+		"pretrain_temperature":1
+	},
+	"model_config":{
+		"save_name":"RelGAN",
+		"batch_size":128,
+		"noise_size":128,
+		"generator":{
+			"name":"GumbelRelRNNGenerator",
+			"mem_slots":8,
+			"head_size":16,
+			"num_heads":8,
+			"optimizer":"Adam",
+			"lr":1e-4,
+			"lr_scheduler":{
+				"name":"ReduceLROnPlateau",
+				"mode":"min",
+				"factor":0.5,
+				"patience":2
+			}
+		},
+		"discriminator": {
+			"name":"GumbelRelRNNDiscriminator",
+			"hidden_size":128,
+			"optimizer":"Adam",
+			"lr":3e-5,
+			"num_embeddings":6
+		}
+	},
+	"dataset_config":{
+		"path":"../../../Datasets/COCO2015Captions",
+		"min_vocab_freq":100
+	}
+}

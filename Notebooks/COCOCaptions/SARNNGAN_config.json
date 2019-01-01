@@ -1,0 +1,36 @@
+{
+	"CUDA_VISIBLE_DEVICES":"1",
+	"train_config":{
+		"num_epochs":200,
+		"epochs_pretrain":100,
+		"max_temperature":2,
+		"pretrain_temperature":1
+	},
+	"model_config":{
+		"save_name":"SA-RNN-GAN",
+		"batch_size":128,
+		"noise_size":128,
+		"generator":{
+			"name":"GumbelSARNNGenerator",
+			"hidden_size":256,
+			"optimizer":"Adam",
+			"lr":1e-4,
+			"lr_scheduler":{
+				"name":"ReduceLROnPlateau",
+				"mode":"min",
+				"factor":0.5,
+				"patience":2
+			}
+		},
+		"discriminator": {
+			"name":"GumbelSARNNDiscriminator",
+			"hidden_size":256,
+			"optimizer":"Adam",
+			"lr":3e-5
+		}
+	},
+	"dataset_config":{
+		"path":"../../../Datasets/COCO2015Captions",
+		"min_vocab_freq":100
+	}
+}
