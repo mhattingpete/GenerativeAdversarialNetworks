@@ -329,6 +329,8 @@ def nll_gen(real_data,fake_data):
 
 # evaluate generator
 nll_gen_error = []
+preds = []
+ground_truths = []
 for n_batch,batch in enumerate(val_iter):
 	real_data = batch.text.to(device)
 	N = real_data.size(0)
@@ -338,13 +340,25 @@ for n_batch,batch in enumerate(val_iter):
 	noise = sample_noise(N,noise_size,device)
 	fake_data = generator(z=noise,num_steps=num_steps,temperature=max_temperature,
 						  x=real_data.long())
-	# Train G
+	# Calculate nll_gen
 	nll_g_error = nll_gen(real_data,fake_data)
 	nll_gen_error.append(nll_g_error.item())
+
+	# Save sentences for bleu score calculation
+	fake_data_vals = torch.argmax(fake_data,dim=2)
+	fake_data_text = tensor_to_words(fake_data_vals,num_to_word_vocab)
+	real_data_text = tensor_to_words(real_data,num_to_word_vocab)
+	index = fake_data_text.index('<eos>')
+	preds.append(fake_data_text[:index+1])
+	index = real_data_text.index('<eos>')
+	ground_truths.append(real_data_text[:index+1])
 
 nll_gen_error = np.array(nll_gen_error)
 nll_gen_error_mean = nll_gen_error.mean()
 print(nll_gen_error_mean)
+
+bleu_stats = get_bleu(preds,ground_truths)
+print(bleu_stats)
 
 text_log.write("\n\nAfter training got nll_gen mean: {}".format(nll_gen_error_mean))
 
