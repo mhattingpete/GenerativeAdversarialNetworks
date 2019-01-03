@@ -262,7 +262,7 @@ for ep in range(epochs_pretrain):
 			pretrain_dis.add_scalar("pretrain_g_error",pretrain_g_error.item(),pretrain_step)
 	if use_g_lr_scheduler:
 		g_lr_scheduler.step(torch.stack(batch_error).mean())
-	if ep % 10 == 0:
+	if ep+1 % 10 == 0:
 		test_samples = generator(z=test_noise,num_steps=num_steps,temperature=pretrain_temperature)
 		test_samples_vals = torch.argmax(test_samples,dim=2)
 		test_samples_text = tensor_to_words(test_samples_vals,num_to_word_vocab)
@@ -272,7 +272,7 @@ pre_text_log.close()
 text_log = open(os.path.join(summary_path,"log.txt"),"a")
 
 # train adverserially
-while epoch <= num_epochs:
+while epoch < num_epochs:
 	train_iter = iter(train_data)
 	temperature = max_temperature**((epoch+1)/num_epochs)
 	for n_batch,batch in enumerate(train_iter):
@@ -310,12 +310,12 @@ while epoch <= num_epochs:
 		global_step += 1
 
 		# Display Progress every few batches
-		if global_step % 50 == 0:
+		if global_step+1 % 50 == 0:
 			dis.add_scalar("epoch",epoch,global_step)
 			dis.add_scalar("g_error",g_error,global_step)
 			dis.add_scalar("d_error",d_error.item(),global_step)
 			dis.add_scalar("beta",temperature.item(),global_step)
-	if epoch % 50 == 0:
+	if epoch+1 % 50 == 0:
 		test_samples = generator(z=test_noise,num_steps=num_steps,temperature=temperature)
 		test_samples_vals = torch.argmax(test_samples,dim=2)
 		test_samples_text = tensor_to_words(test_samples_vals,num_to_word_vocab)
@@ -354,9 +354,15 @@ for n_batch,batch in enumerate(val_iter):
 	fake_data_vals = torch.argmax(fake_data,dim=2)
 	fake_data_text = tensor_to_words(fake_data_vals,num_to_word_vocab)
 	real_data_text = tensor_to_words(real_data,num_to_word_vocab)
-	index = fake_data_text.index('<eos>')
+	if "<eos>" in fake_data_text:
+		index = fake_data_text.index("<eos>")
+	else:
+		index = len(fake_data_text)
 	preds.append(fake_data_text[:index+1])
-	index = real_data_text.index('<eos>')
+	if "<eos>" in real_data_text:
+		index = real_data_text.index("<eos>")
+	else:
+		index = len(real_data_text)
 	ground_truths.append(real_data_text[:index+1])
 
 nll_gen_error = np.array(nll_gen_error)
