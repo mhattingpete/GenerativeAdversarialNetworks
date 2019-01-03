@@ -2,6 +2,18 @@ import torch
 import os
 import errno
 
+def tensor_to_list_of_words(batch,num_to_word_vocab):
+	text_translated = []
+	for line in batch:
+		line_translated = []
+		for word in line:
+			word_tranlated = num_to_word_vocab[word.cpu().numpy().tolist()]
+			if word_tranlated in ["<pad>"]:
+				continue
+			line_translated.append(word_tranlated)
+		text_translated.append(line_translated)
+	return text_translated
+
 def save_model(model,model_save_path):
 	create_dir(model_save_path)
 	torch.save(model.state_dict(),os.path.join(model_save_path,model.__class__.__name__))

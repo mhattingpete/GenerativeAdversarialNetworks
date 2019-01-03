@@ -13,9 +13,10 @@ os.environ["CUDA_VISIBLE_DEVICES"] = config["CUDA_VISIBLE_DEVICES"]
 import numpy as np
 from torch import nn,optim
 from tensorboardX import SummaryWriter
+import random
+from nltk.translate.bleu_score import sentence_bleu
 
-from utils import onehot,num_parameters,sample_noise,true_target,fake_target,save_model,load_model
-from bleu_score import get_bleu
+from utils import onehot,num_parameters,sample_noise,true_target,fake_target,save_model,load_model,tensor_to_list_of_words
 from visualize import tensor_to_words
 import generators
 import discriminators
@@ -335,8 +336,8 @@ def nll_gen(real_data,fake_data):
 
 # evaluate generator
 nll_gen_error = []
-preds = []
-ground_truths = []
+hypothesis_list = []
+reference = []
 for n_batch,batch in enumerate(val_iter):
 	real_data = batch.text.to(device)
 	N = real_data.size(0)
@@ -352,25 +353,34 @@ for n_batch,batch in enumerate(val_iter):
 
 	# Save sentences for bleu score calculation
 	fake_data_vals = torch.argmax(fake_data,dim=2)
-	fake_data_text = tensor_to_words(fake_data_vals,num_to_word_vocab)
-	real_data_text = tensor_to_words(real_data,num_to_word_vocab)
+	fake_data_text = tensor_to_list_of_words(fake_data_vals,num_to_word_vocab)
+	real_data_text = tensor_to_list_of_words(real_data,num_to_word_vocab)
 	if "<eos>" in fake_data_text:
 		index = fake_data_text.index("<eos>")
 	else:
 		index = len(fake_data_text)
-	preds.append(fake_data_text[:index+1])
+	hypothesis_list.append(fake_data_text[:index+1])
 	if "<eos>" in real_data_text:
 		index = real_data_text.index("<eos>")
 	else:
 		index = len(real_data_text)
-	ground_truths.append(real_data_text[:index+1])
+	reference.append(real_data_text[:index+1])
 
 nll_gen_error = np.array(nll_gen_error)
 nll_gen_error_mean = nll_gen_error.mean()
 print(nll_gen_error_mean)
 
-bleu_stats = get_bleu(preds,ground_truths)
-print(bleu_stats)
+random.shuffle(hypothesis_list)
+n_gram_bleu_scores = {}
+for ngram in range(2,6):
+	weight = tuple((1./ngram for _ in range(ngram)))
+	bleu_score = []
+	for h in hypothesis_list[:2000]:
+		BLEUscore = sentence_bleu(reference,h,weight)
+		bleu_score.append(BLEUscore)
+	current_bleu = 1.0*sum(bleu_score)/len(bleu_score)
+	print(len(weight),'-gram BLEU score : ',current_bleu)
+	n_gram_bleu_scores["{}-gram".format(len(weight))] = current_bleu
 
 text_log.write("\n\nAfter training got nll_gen mean: {}".format(nll_gen_error_mean))
 
