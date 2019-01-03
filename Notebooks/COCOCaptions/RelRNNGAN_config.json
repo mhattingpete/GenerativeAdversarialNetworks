@@ -4,7 +4,9 @@
 		"num_epochs":200,
 		"epochs_pretrain":100,
 		"max_temperature":2,
-		"pretrain_temperature":1
+		"pretrain_temperature":1,
+		"gen_steps":1,
+		"gen_train_freq":3
 	},
 	"model_config":{
 		"save_name":"RelGAN",

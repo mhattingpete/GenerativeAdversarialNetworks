@@ -291,7 +291,7 @@ class GumbelRelRNNGenerator(nn.Module):
 		self.last_activation = GumbelSoftmax()
 		self.SOS_TOKEN = SOS_TOKEN if SOS_TOKEN else output_size-1
 
-	def forward(self,z,num_steps,temperature,x=None,memory=None):
+	def forward(self,z,num_steps,temperature,x=None):
 		batch_size = z.size(0)
 		predictions = []
 		z = self.batchnorm1(self.activation(self.z2m(z)))

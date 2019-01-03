@@ -10,10 +10,11 @@ with open(sys.argv[1],"rb") as f:
 
 os.environ["CUDA_VISIBLE_DEVICES"] = config["CUDA_VISIBLE_DEVICES"]
 
+import numpy as np
 from torch import nn,optim
 from tensorboardX import SummaryWriter
 
-from utils import onehot,num_parameters,sample_noise,true_target,fake_target
+from utils import onehot,num_parameters,sample_noise,true_target,fake_target,save_model,load_model
 from visualize import tensor_to_words
 import generators
 import discriminators
@@ -132,7 +133,6 @@ def pretrain_generator(real_data,fake_data,optimizer):
 	'''
 	Pretrain the generator to generate realistic samples for a good initialization
 	'''
-	num_classes = fake_data.size(2)
 	# Reset gradients
 	optimizer.zero_grad()
 	loss = 0
@@ -216,8 +216,8 @@ def train_discriminator(real_data_onehot,fake_data,optimizer):
 	optimizer.step()
 	return loss
 
-gen_steps = 1
-gen_train_freq = 1
+gen_steps = config["train_config"]["gen_steps"]
+gen_train_freq = config["train_config"]["gen_train_freq"]
 max_temperature = torch.FloatTensor([config["train_config"]["max_temperature"]]).to(device)
 pretrain_temperature = torch.FloatTensor([config["train_config"]["pretrain_temperature"]]).to(device)
 
@@ -238,10 +238,8 @@ for ep in range(epochs_pretrain):
 		real_data = batch.text.to(device)
 		N = real_data.size(0)
 		num_steps = real_data.size(1)
-		real_data_onehot = onehot(real_data,num_classes)
 
 		# Generate fake data
-		generator.train()
 		noise = sample_noise(N,noise_size,device)
 		fake_data = generator(z=noise,num_steps=num_steps,temperature=pretrain_temperature,
 							  x=real_data.long())
@@ -253,8 +251,6 @@ for ep in range(epochs_pretrain):
 		batch_error.append(pretrain_g_error)
 		
 		# Log batch error and delete tensors
-		#pretrain_dis.add_scalar("pretrain epoch",ep,pretrain_step)
-		#pretrain_dis.add_scalar("pretrain_g_error",pretrain_g_error.item(),pretrain_step)
 		pretrain_step += 1
 		if pretrain_step % 200 == 0:
 			pretrain_dis.add_scalar("pretrain epoch",ep,pretrain_step)
@@ -262,16 +258,15 @@ for ep in range(epochs_pretrain):
 	if use_g_lr_scheduler:
 		g_lr_scheduler.step(torch.stack(batch_error).mean())
 	if ep % 10 == 0:
-		generator.eval()
 		test_samples = generator(z=test_noise,num_steps=num_steps,temperature=pretrain_temperature)
 		test_samples_vals = torch.argmax(test_samples,dim=2)
 		print(tensor_to_words(test_samples_vals,num_to_word_vocab))
 
 
-log = open(os.path.join(model_save_path,"log.txt"),"a")
+text_log = open(os.path.join(summary_path,"log.txt"),"a")
 
 # train adverserially
-while epoch < num_epochs:
+while epoch <= num_epochs:
 	train_iter = iter(train_data)
 	temperature = max_temperature**((epoch+1)/num_epochs)
 	for n_batch,batch in enumerate(train_iter):
@@ -306,12 +301,6 @@ while epoch < num_epochs:
 				# Train G
 				g_error = train_generator(real_data_onehot,fake_data,g_optimizer)
 				g_error = g_error.item()
-
-		# Log batch error and delete tensors
-		#dis.add_scalar("epoch",epoch,global_step)
-		#dis.add_scalar("g_error",g_error,global_step)
-		#dis.add_scalar("d_error",d_error.item(),global_step)
-		#dis.add_scalar("beta",temperature.item(),global_step)
 		global_step += 1
 
 		# Display Progress every few batches
@@ -320,12 +309,11 @@ while epoch < num_epochs:
 			dis.add_scalar("g_error",g_error,global_step)
 			dis.add_scalar("d_error",d_error.item(),global_step)
 			dis.add_scalar("beta",temperature.item(),global_step)
-			test_samples = generator(z=test_noise,num_steps=num_steps,temperature=temperature)
-			test_samples_vals = torch.argmax(test_samples,dim=2)
-			test_samples_text = tensor_to_words(test_samples_vals,num_to_word_vocab)
-			print(test_samples_text)
-			if epoch % 50 == 0:
-				log.write("Epoch: "+str(epoch)+"\n"+test_samples_text+"\n")
+	if epoch % 50 == 0:
+		test_samples = generator(z=test_noise,num_steps=num_steps,temperature=temperature)
+		test_samples_vals = torch.argmax(test_samples,dim=2)
+		test_samples_text = tensor_to_words(test_samples_vals,num_to_word_vocab)
+		text_log.write("Epoch: "+str(epoch)+"\n"+test_samples_text+"\n")
 	epoch += 1
 
 def nll_gen(real_data,fake_data):
@@ -339,34 +327,31 @@ def nll_gen(real_data,fake_data):
 	loss /= fake_data.size(1)
 	return loss
 
-#torch.cuda.empty_cache()
-
 # evaluate generator
 nll_gen_error = []
 for n_batch,batch in enumerate(val_iter):
-	real_data = batch.text
+	real_data = batch.text.to(device)
 	N = real_data.size(0)
 	num_steps = real_data.size(1)
 
 	# Generate fake data
-	generator.eval()
 	noise = sample_noise(N,noise_size,device)
 	fake_data = generator(z=noise,num_steps=num_steps,temperature=max_temperature,
 						  x=real_data.long())
 	# Train G
 	nll_g_error = nll_gen(real_data,fake_data)
-	nll_gen_error.append(nll_g_error)
+	nll_gen_error.append(nll_g_error.item())
 
-nll_gen_error = torch.stack(nll_gen_error)
+nll_gen_error = np.array(nll_gen_error)
 nll_gen_error_mean = nll_gen_error.mean()
 print(nll_gen_error_mean)
 
-log.write("After training got nll_gen mean: {}".format(nll_gen_error_mean))
+text_log.write("\n\nAfter training got nll_gen mean: {}".format(nll_gen_error_mean))
 
-log.close()
+text_log.close()
 
-save_model(generator,model_save_path)
-save_model(discriminator,model_save_path)
+save_model(generator,summary_path)
+save_model(discriminator,summary_path)
 
 # to load model run
 #load_model(model,model_load_path)
