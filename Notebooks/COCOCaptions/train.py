@@ -25,17 +25,21 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model_save_path = os.path.join("../Saved_models",config["model_config"]["save_name"])
 
 index = 0
-pre_summary_path = os.path.join(model_save_path,"pretrain_exp-{}".format(index))
+if not os.path.exists(os.path.join(model_save_path,"pretrain")):
+        os.mkdir(os.path.join(model_save_path,"pretrain"))
+pre_summary_path = os.path.join(model_save_path,"pretrain/exp-{}".format(index))
 while os.path.exists(pre_summary_path):
 	index += 1
-	pre_summary_path = os.path.join(model_save_path,"pretrain_exp-{}".format(index))
+	pre_summary_path = os.path.join(model_save_path,"pretrain/exp-{}".format(index))
 pretrain_dis = SummaryWriter(pre_summary_path)
 
 index = 0
-summary_path = os.path.join(model_save_path,"exp-{}".format(index))
+if not os.path.exists(os.path.join(model_save_path,"train")):
+	os.mkdir(os.path.join(model_save_path,"train"))
+summary_path = os.path.join(model_save_path,"train/exp-{}".format(index))
 while os.path.exists(summary_path):
 	index += 1
-	summary_path = os.path.join(model_save_path,"exp-{}".format(index))
+	summary_path = os.path.join(model_save_path,"train/exp-{}".format(index))
 dis = SummaryWriter(summary_path)
 
 print("Does model save path exist:",os.path.exists(model_save_path))
@@ -80,7 +84,7 @@ if "hidden_size" not in config["model_config"]["generator"] and "mem_slots" in c
 "head_size" in config["model_config"]["generator"] and "num_heads" in config["model_config"]["generator"]:
 	generator = getattr(generators,config["model_config"]["generator"]["name"])(mem_slots=config["model_config"]["generator"]["mem_slots"],
 		head_size=config["model_config"]["generator"]["head_size"],num_heads=config["model_config"]["generator"]["num_heads"],
-		noise_size=noise_size,output_size=num_classes,device=device,SOS_TOKEN=SOS_TOKEN)
+		noise_size=noise_size,output_size=num_classes,SOS_TOKEN=SOS_TOKEN).to(device)
 elif "hidden_size" in config["model_config"]["generator"] and "num_heads" in config["model_config"]["generator"] and \
 "similarity" in config["model_config"]["generator"]:
 	generator = getattr(generators,config["model_config"]["generator"]["name"])(hidden_size=config["model_config"]["generator"]["hidden_size"],

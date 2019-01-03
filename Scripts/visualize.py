@@ -23,7 +23,7 @@ def tensor_to_words(batch,num_to_word_vocab):
 	for line in batch:
 		line_translated = []
 		for word in line:
-			word_tranlated = num_to_word_vocab[word.numpy().tolist()]
+			word_tranlated = num_to_word_vocab[word.cpu().numpy().tolist()]
 			if word_tranlated in ["<sos>","<eos>","<pad>"]:
 				continue
 			line_translated.append(word_tranlated)

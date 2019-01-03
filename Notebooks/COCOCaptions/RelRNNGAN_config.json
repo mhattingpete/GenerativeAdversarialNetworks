@@ -1,5 +1,5 @@
 {
-	"CUDA_VISIBLE_DEVICES":"1",
+	"CUDA_VISIBLE_DEVICES":"0",
 	"train_config":{
 		"num_epochs":200,
 		"epochs_pretrain":100,
