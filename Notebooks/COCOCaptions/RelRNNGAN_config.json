@@ -18,7 +18,8 @@
 			"head_size":16,
 			"num_heads":8,
 			"optimizer":"Adam",
-			"lr":1e-4,
+			"pre_lr":1e-4,
+			"lr":1e-5,
 			"lr_scheduler":{
 				"name":"ReduceLROnPlateau",
 				"mode":"min",
@@ -30,7 +31,7 @@
 			"name":"GumbelRelRNNDiscriminator",
 			"hidden_size":128,
 			"optimizer":"Adam",
-			"lr":3e-5,
+			"lr":1e-5,
 			"num_embeddings":6
 		}
 	},

@@ -16,7 +16,8 @@
 			"name":"GumbelSARNNGenerator",
 			"hidden_size":256,
 			"optimizer":"Adam",
-			"lr":1e-4,
+			"pre_lr":1e-4,
+			"lr":1e-5,
 			"lr_scheduler":{
 				"name":"ReduceLROnPlateau",
 				"mode":"min",
@@ -28,7 +29,7 @@
 			"name":"GumbelSARNNDiscriminator",
 			"hidden_size":256,
 			"optimizer":"Adam",
-			"lr":3e-5
+			"lr":1e-5
 		}
 	},
 	"dataset_config":{

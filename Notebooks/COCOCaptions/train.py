@@ -15,6 +15,7 @@ from torch import nn,optim
 from tensorboardX import SummaryWriter
 
 from utils import onehot,num_parameters,sample_noise,true_target,fake_target,save_model,load_model
+from bleu_score import get_bleu
 from visualize import tensor_to_words
 import generators
 import discriminators
@@ -72,6 +73,7 @@ test_iter = iter(train_data)
 """
 Prepare models
 """
+g_pre_lr = config["model_config"]["generator"]["pre_lr"]
 g_lr = config["model_config"]["generator"]["lr"]
 d_lr = config["model_config"]["discriminator"]["lr"]
 
@@ -105,13 +107,14 @@ else:
 	hidden_size=config["model_config"]["discriminator"]["hidden_size"],output_size=1).to(device)
 
 # otpimizers
+g_pre_optimizer = getattr(optim,config["model_config"]["generator"]["optimizer"])(generator.parameters(),lr=g_pre_lr)
 g_optimizer = getattr(optim,config["model_config"]["generator"]["optimizer"])(generator.parameters(),lr=g_lr)
 d_optimizer = getattr(optim,config["model_config"]["discriminator"]["optimizer"])(discriminator.parameters(),lr=d_lr)
 use_g_lr_scheduler = "lr_scheduler" in config["model_config"]["generator"]
 use_d_lr_scheduler = "lr_scheduler" in config["model_config"]["discriminator"]
 
 if use_g_lr_scheduler:
-	g_lr_scheduler = getattr(optim.lr_scheduler,config["model_config"]["generator"]["lr_scheduler"]["name"])(g_optimizer,
+	g_lr_scheduler = getattr(optim.lr_scheduler,config["model_config"]["generator"]["lr_scheduler"]["name"])(g_pre_optimizer,
 		mode=config["model_config"]["generator"]["lr_scheduler"]["mode"],factor=config["model_config"]["generator"]["lr_scheduler"]["factor"],
 		patience=config["model_config"]["generator"]["lr_scheduler"]["patience"],verbose=True)
 
@@ -247,7 +250,7 @@ for ep in range(epochs_pretrain):
 			print(noise)
 			assert False
 		# Train G
-		pretrain_g_error = pretrain_generator(real_data,fake_data,g_optimizer)
+		pretrain_g_error = pretrain_generator(real_data,fake_data,g_pre_optimizer)
 		batch_error.append(pretrain_g_error)
 		
 		# Log batch error and delete tensors
