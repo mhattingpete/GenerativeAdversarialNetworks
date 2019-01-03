@@ -233,6 +233,8 @@ epoch = 0
 d_error = 0
 g_error = 0
 
+pre_text_log = open(os.path.join(pre_summary_path,"log.txt"),"a")
+
 # pretrain generator
 for ep in range(epochs_pretrain):
 	train_iter = iter(train_data)
@@ -263,9 +265,10 @@ for ep in range(epochs_pretrain):
 	if ep % 10 == 0:
 		test_samples = generator(z=test_noise,num_steps=num_steps,temperature=pretrain_temperature)
 		test_samples_vals = torch.argmax(test_samples,dim=2)
-		print(tensor_to_words(test_samples_vals,num_to_word_vocab))
+		test_samples_text = tensor_to_words(test_samples_vals,num_to_word_vocab)
+		pre_text_log.write("Epoch: "+str(ep)+"\n"+test_samples_text+"\n")
 
-
+pre_text_log.close()
 text_log = open(os.path.join(summary_path,"log.txt"),"a")
 
 # train adverserially
