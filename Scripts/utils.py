@@ -7,10 +7,12 @@ def tensor_to_list_of_words(batch,num_to_word_vocab):
 	for line in batch:
 		line_translated = []
 		for word in line:
-			word_tranlated = num_to_word_vocab[word.cpu().numpy().tolist()]
-			if word_tranlated in ["<pad>"]:
+			word_translated = num_to_word_vocab[word.cpu().numpy().tolist()]
+			if word_translated in ["<pad>"]:
 				continue
-			line_translated.append(word_tranlated)
+			line_translated.append(word_translated)
+			if word_translated == "<eos>":
+				break
 		text_translated.append(line_translated)
 	return text_translated
 

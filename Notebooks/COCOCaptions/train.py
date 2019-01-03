@@ -355,22 +355,16 @@ for n_batch,batch in enumerate(val_iter):
 	fake_data_vals = torch.argmax(fake_data,dim=2)
 	fake_data_text = tensor_to_list_of_words(fake_data_vals,num_to_word_vocab)
 	real_data_text = tensor_to_list_of_words(real_data,num_to_word_vocab)
-	if "<eos>" in fake_data_text:
-		index = fake_data_text.index("<eos>")
-	else:
-		index = len(fake_data_text)
-	hypothesis_list.append(fake_data_text[:index+1])
-	if "<eos>" in real_data_text:
-		index = real_data_text.index("<eos>")
-	else:
-		index = len(real_data_text)
-	reference.append(real_data_text[:index+1])
+	hypothesis_list.extend(fake_data_text)
+	reference.extend(real_data_text)
 
 nll_gen_error = np.array(nll_gen_error)
 nll_gen_error_mean = nll_gen_error.mean()
 print(nll_gen_error_mean)
 
 random.shuffle(hypothesis_list)
+random.shuffle(reference)
+reference = reference[:5000]
 n_gram_bleu_scores = {}
 for ngram in range(2,6):
 	weight = tuple((1./ngram for _ in range(ngram)))
@@ -379,8 +373,10 @@ for ngram in range(2,6):
 		BLEUscore = sentence_bleu(reference,h,weight)
 		bleu_score.append(BLEUscore)
 	current_bleu = 1.0*sum(bleu_score)/len(bleu_score)
-	print(len(weight),'-gram BLEU score : ',current_bleu)
+	print("{}-gram BLEU score : {}".format(len(weight),current_bleu))
 	n_gram_bleu_scores["{}-gram".format(len(weight))] = current_bleu
+	if current_bleu < 1e-3:
+		break
 
 text_log.write("\n\nAfter training got nll_gen mean: {}".format(nll_gen_error_mean))
 
