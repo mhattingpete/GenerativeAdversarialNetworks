@@ -263,7 +263,7 @@ for ep in range(epochs_pretrain):
 			pretrain_dis.add_scalar("pretrain_g_error",pretrain_g_error.item(),pretrain_step)
 	if use_g_lr_scheduler:
 		g_lr_scheduler.step(torch.stack(batch_error).mean())
-	if ep+1 % 10 == 0:
+	if ep % 10 == 0:
 		test_samples = generator(z=test_noise,num_steps=num_steps,temperature=pretrain_temperature)
 		test_samples_vals = torch.argmax(test_samples,dim=2)
 		test_samples_text = tensor_to_words(test_samples_vals,num_to_word_vocab)
@@ -311,17 +311,22 @@ while epoch < num_epochs:
 		global_step += 1
 
 		# Display Progress every few batches
-		if global_step+1 % 50 == 0:
+		if global_step % 50 == 0:
 			dis.add_scalar("epoch",epoch,global_step)
 			dis.add_scalar("g_error",g_error,global_step)
 			dis.add_scalar("d_error",d_error.item(),global_step)
 			dis.add_scalar("beta",temperature.item(),global_step)
-	if epoch+1 % 50 == 0:
-		test_samples = generator(z=test_noise,num_steps=num_steps,temperature=temperature)
-		test_samples_vals = torch.argmax(test_samples,dim=2)
-		test_samples_text = tensor_to_words(test_samples_vals,num_to_word_vocab)
-		text_log.write("Epoch: "+str(epoch)+"\n"+test_samples_text+"\n")
+			if epoch % 50 == 0:
+				test_samples = generator(z=test_noise,num_steps=num_steps,temperature=temperature)
+				test_samples_vals = torch.argmax(test_samples,dim=2)
+				test_samples_text = tensor_to_words(test_samples_vals,num_to_word_vocab)
+				text_log.write("Epoch: "+str(epoch)+"\n"+test_samples_text+"\n")
 	epoch += 1
+
+test_samples = generator(z=test_noise,num_steps=num_steps,temperature=temperature)
+test_samples_vals = torch.argmax(test_samples,dim=2)
+test_samples_text = tensor_to_words(test_samples_vals,num_to_word_vocab)
+text_log.write("Epoch: "+str(num_epochs)+"\n"+test_samples_text+"\n")
 
 def nll_gen(real_data,fake_data):
 	'''
@@ -365,7 +370,7 @@ print(nll_gen_error_mean)
 random.shuffle(hypothesis_list)
 random.shuffle(reference)
 reference = reference[:5000]
-n_gram_bleu_scores = {}
+n_gram_bleu_scores = {"{}-gram".format(gram):0 for gram in range(2,6)}
 for ngram in range(2,6):
 	weight = tuple((1./ngram for _ in range(ngram)))
 	bleu_score = []
@@ -373,12 +378,13 @@ for ngram in range(2,6):
 		BLEUscore = sentence_bleu(reference,h,weight)
 		bleu_score.append(BLEUscore)
 	current_bleu = 1.0*sum(bleu_score)/len(bleu_score)
-	print("{}-gram BLEU score : {}".format(len(weight),current_bleu))
 	n_gram_bleu_scores["{}-gram".format(len(weight))] = current_bleu
-	if current_bleu < 1e-3:
+	if current_bleu < 1e-2:
 		break
 
 text_log.write("\n\nAfter training got nll_gen mean: {}".format(nll_gen_error_mean))
+for gram,score in n_gram_bleu_scores.items():
+	text_log.write("\nGot {} score: {}".format(gram,score))
 
 text_log.close()
 
