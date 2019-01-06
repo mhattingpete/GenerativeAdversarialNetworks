@@ -1,6 +1,7 @@
 import torch
 import os
 import errno
+from torch import nn
 
 def tensor_to_list_of_words(batch,num_to_word_vocab):
 	text_translated = []
@@ -72,3 +73,14 @@ def onehot(vec,output_size):
 
 def num_parameters(model):
 	return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+class RaGANLoss:
+	def __init__(self):
+		self.loss_fun = nn.BCEWithLogitsLoss()
+
+	def __call__(self,input,opposite,target_is_real):
+		if target_is_real:
+			target = true_target(N,input.device)
+		else:
+			target = fake_target(N,input.device)
+		return self.loss_fun(input-torch.mean(opposite,dim=0),target)
