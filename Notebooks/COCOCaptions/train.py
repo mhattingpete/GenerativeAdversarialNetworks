@@ -248,9 +248,6 @@ for ep in range(epochs_pretrain):
 		noise = sample_noise(N,noise_size,device)
 		fake_data = generator(z=noise,num_steps=num_steps,temperature=pretrain_temperature,
 							  x=real_data.long())
-		if torch.isnan(fake_data).any():
-			print(noise)
-			assert False
 		# Train G
 		pretrain_g_error = pretrain_generator(real_data,fake_data,g_pre_optimizer)
 		batch_error.append(pretrain_g_error)
@@ -289,9 +286,6 @@ while epoch < num_epochs:
 		noise_tensor = sample_noise(N,noise_size,device)
 		with torch.no_grad():
 			fake_data = generator(z=noise_tensor,num_steps=num_steps,temperature=temperature).detach()
-		if torch.isnan(fake_data).any():
-			print(noise_tensor)
-			assert False
 		# Train D
 		d_error = train_discriminator(real_data_onehot,fake_data,d_optimizer)
 
@@ -301,9 +295,6 @@ while epoch < num_epochs:
 				# Generate fake data
 				noise_tensor = sample_noise(N,noise_size,device)
 				fake_data = generator(z=noise_tensor,num_steps=num_steps,temperature=temperature)
-				if torch.isnan(fake_data).any():
-					print(noise_tensor)
-					assert False
 				# Train G
 				g_error = train_generator(real_data_onehot,fake_data,g_optimizer)
 				g_error = g_error.item()
@@ -325,7 +316,7 @@ while epoch < num_epochs:
 test_samples = generator(z=test_noise,num_steps=num_steps,temperature=temperature)
 test_samples_vals = torch.argmax(test_samples,dim=2)
 test_samples_text = tensor_to_words(test_samples_vals,num_to_word_vocab)
-text_log.write("Epoch: "+str(num_epochs)+"\n"+test_samples_text+"\n")
+text_log.write("After training:\n"+test_samples_text+"\n")
 
 def nll_gen(real_data,fake_data):
 	'''
@@ -381,7 +372,7 @@ for ngram in range(2,6):
 	if current_bleu < 1e-2:
 		break
 
-text_log.write("\n\nAfter training got nll_gen mean: {}".format(nll_gen_error_mean))
+text_log.write("\n\nGot nll_gen mean: {}".format(nll_gen_error_mean))
 for gram,score in n_gram_bleu_scores.items():
 	text_log.write("\nGot {} score: {}".format(gram,score))
 
