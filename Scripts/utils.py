@@ -79,6 +79,7 @@ class RaGANLoss:
 		self.loss_fun = nn.BCEWithLogitsLoss()
 
 	def __call__(self,input,opposite,target_is_real):
+		N = input.size(0)
 		if target_is_real:
 			target = true_target(N,input.device)
 		else:
