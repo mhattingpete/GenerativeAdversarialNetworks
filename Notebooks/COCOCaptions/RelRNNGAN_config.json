@@ -6,7 +6,8 @@
 		"max_temperature":100,
 		"pretrain_temperature":1,
 		"gen_steps":1,
-		"gen_train_freq":5
+		"gen_train_freq":5,
+		"loss_fun":"RaSGAN"
 	},
 	"model_config":{
 		"save_name":"RelGAN",
