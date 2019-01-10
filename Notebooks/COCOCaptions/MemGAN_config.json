@@ -3,10 +3,10 @@
 	"train_config":{
 		"num_epochs":200,
 		"epochs_pretrain":100,
-		"max_temperature":10,
+		"max_temperature":100,
 		"pretrain_temperature":1,
 		"gen_steps":1,
-		"gen_train_freq":3
+		"gen_train_freq":5
 	},
 	"model_config":{
 		"save_name":"MEM-GAN",
@@ -18,8 +18,8 @@
 			"sim_size":4,
 			"similarity":"CosineSimilarity",
 			"optimizer":"Adam",
-			"pre_lr":1e-4,
-			"lr":1e-5,
+			"pre_lr":1e-2,
+			"lr":1e-4,
 			"lr_scheduler":{
 				"name":"ReduceLROnPlateau",
 				"mode":"min",
@@ -33,7 +33,7 @@
 			"sim_size":4,
 			"similarity":"CosineSimilarity",
 			"optimizer":"Adam",
-			"lr":1e-5
+			"lr":1e-4
 		}
 	},
 	"dataset_config":{

@@ -3,23 +3,23 @@
 	"train_config":{
 		"num_epochs":200,
 		"epochs_pretrain":100,
-		"max_temperature":2,
+		"max_temperature":100,
 		"pretrain_temperature":1,
 		"gen_steps":1,
-		"gen_train_freq":3
+		"gen_train_freq":5
 	},
 	"model_config":{
 		"save_name":"RelGAN",
-		"batch_size":128,
+		"batch_size":64,
 		"noise_size":128,
 		"generator":{
 			"name":"GumbelRelRNNGenerator",
-			"mem_slots":8,
-			"head_size":16,
-			"num_heads":8,
+			"mem_slots":1,
+			"head_size":128,
+			"num_heads":2,
 			"optimizer":"Adam",
-			"pre_lr":1e-4,
-			"lr":1e-5,
+			"pre_lr":1e-2,
+			"lr":1e-4,
 			"lr_scheduler":{
 				"name":"ReduceLROnPlateau",
 				"mode":"min",
@@ -29,10 +29,11 @@
 		},
 		"discriminator": {
 			"name":"GumbelRelRNNDiscriminator",
-			"hidden_size":128,
+			"hidden_size":32,
+			"rnn_size":256,
 			"optimizer":"Adam",
-			"lr":1e-5,
-			"num_embeddings":6
+			"lr":1e-4,
+			"num_embeddings":64
 		}
 	},
 	"dataset_config":{

@@ -101,7 +101,7 @@ else:
 multiple_embeddings = "num_embeddings" in config["model_config"]["discriminator"]
 if multiple_embeddings:
 	discriminator = getattr(discriminators,config["model_config"]["discriminator"]["name"])(input_size=num_classes,
-	hidden_size=config["model_config"]["discriminator"]["hidden_size"],output_size=1,
+	hidden_size=config["model_config"]["discriminator"]["hidden_size"],rnn_size=config["model_config"]["discriminator"]["rnn_size"],output_size=1,
 	num_embeddings=config["model_config"]["discriminator"]["num_embeddings"]).to(device)
 elif "hidden_size" in config["model_config"]["discriminator"] and "sim_size" in config["model_config"]["discriminator"] and \
 "similarity" in config["model_config"]["discriminator"]:
