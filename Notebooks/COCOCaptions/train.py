@@ -89,10 +89,10 @@ if "hidden_size" not in config["model_config"]["generator"] and "mem_slots" in c
 	generator = getattr(generators,config["model_config"]["generator"]["name"])(mem_slots=config["model_config"]["generator"]["mem_slots"],
 		head_size=config["model_config"]["generator"]["head_size"],num_heads=config["model_config"]["generator"]["num_heads"],
 		noise_size=noise_size,output_size=num_classes,SOS_TOKEN=SOS_TOKEN).to(device)
-elif "hidden_size" in config["model_config"]["generator"] and "num_heads" in config["model_config"]["generator"] and \
+elif "hidden_size" in config["model_config"]["generator"] and "sim_size" in config["model_config"]["generator"] and \
 "similarity" in config["model_config"]["generator"]:
 	generator = getattr(generators,config["model_config"]["generator"]["name"])(hidden_size=config["model_config"]["generator"]["hidden_size"],
-		noise_size=noise_size,output_size=num_classes,max_seq_len=max_seq_len,num_heads=config["model_config"]["generator"]["num_heads"],
+		noise_size=noise_size,output_size=num_classes,max_seq_len=max_seq_len,sim_size=config["model_config"]["generator"]["sim_size"],
 		similarity=getattr(nn,generators,config["model_config"]["generator"]["similarity"])(dim=-1),SOS_TOKEN=SOS_TOKEN).to(device)
 else:
 	generator = getattr(generators,config["model_config"]["generator"]["name"])(hidden_size=config["model_config"]["generator"]["hidden_size"],
@@ -103,6 +103,12 @@ if multiple_embeddings:
 	discriminator = getattr(discriminators,config["model_config"]["discriminator"]["name"])(input_size=num_classes,
 	hidden_size=config["model_config"]["discriminator"]["hidden_size"],output_size=1,
 	num_embeddings=config["model_config"]["discriminator"]["num_embeddings"]).to(device)
+elif "hidden_size" in config["model_config"]["discriminator"] and "sim_size" in config["model_config"]["discriminator"] and \
+"similarity" in config["model_config"]["discriminator"]:
+	discriminator = getattr(discriminators,config["model_config"]["discriminator"]["name"])(input_size=num_classes,
+	hidden_size=config["model_config"]["discriminator"]["hidden_size"],output_size=1,
+	max_seq_len=max_seq_len,sim_size=config["model_config"]["discriminator"]["sim_size"],
+	similarity=getattr(nn,discriminator,config["model_config"]["discriminator"]["similarity"])(dim=-1)).to(device)
 else:
 	discriminator = getattr(discriminators,config["model_config"]["discriminator"]["name"])(input_size=num_classes,
 	hidden_size=config["model_config"]["discriminator"]["hidden_size"],output_size=1).to(device)
@@ -323,7 +329,7 @@ def nll_gen(real_data,fake_data):
 	Evaluate the generators ability to generate diverse samples
 	'''    
 	loss = 0
-	fake_data = torch.log(fake_data)
+	fake_data = torch.log(fake_data+1e-8)
 	for i in range(fake_data.size(1)):
 		loss += pretrain_loss_fun(fake_data[:,i,:],real_data[:,i])
 	loss /= fake_data.size(1)

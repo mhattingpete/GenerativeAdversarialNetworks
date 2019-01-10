@@ -328,74 +328,24 @@ class RelationalRNNCell(nn.Module):
 ####         Memory layers         ###
 ######################################
 
-class MemoryLayer(nn.Module):
-	def __init__(self,hidden_size,noise_size,output_size,max_seq_len,SOS_TOKEN,activation=nn.LeakyReLU(0.2),num_heads=8,similarity=nn.CosineSimilarity(dim=-1)):
+class MemoryCell(nn.Module):
+	def __init__(self,input_size,hidden_size,sim_size=4,similarity=nn.CosineSimilarity(dim=-1)):
 		super().__init__()
 		# internal variable sizes
 		self.hidden_size = hidden_size
-		step_input_size = hidden_size + hidden_size
-		self.num_heads = num_heads
-		self.output_size = output_size
-		# layer definitions
-		self.z2h = nn.Linear(noise_size,hidden_size)
-		self.batchnorm1 = nn.BatchNorm1d(hidden_size)
-		self.embedding = nn.Embedding(output_size,hidden_size)
-		self.batchnorm2 = nn.BatchNorm1d(step_input_size)
-		self.gru = nn.GRUCell(step_input_size,hidden_size)
-		self.h2o = nn.Linear(hidden_size,output_size)
-		self.batchnorm3 = nn.BatchNorm1d(hidden_size)
-		self.activation = activation
-		self.softmax = nn.Softmax(dim=-1)
-		self.SOS_TOKEN = SOS_TOKEN
-		self.linear = nn.Linear(output_size,output_size*num_heads)
-		self.max_seq_len = max_seq_len
-		self.memory = nn.Parameter(torch.randn(1,self.max_seq_len,step_input_size))
+		self.sim_size = sim_size
+		self.gru = nn.GRUCell(input_size,hidden_size)
+		self.linear = nn.Linear(hidden_size,self.sim_size*hidden_size)
 		self.similarity = similarity
 
-	def forward(self,z,num_steps,temperature,x=None):
-		if num_steps > self.max_seq_len:
-			raise ValueError("num_steps ({}) must be less or equal to max_seq_len ({})".format(num_steps,self.max_seq_len))
-		predictions = []
-		pred_mem = []
-		z = self.batchnorm1(self.activation(self.z2h(z)))
-		h = z # initialize the hidden state
-		m = z # initialize the hidden state for memory
-		memory = self.memory
-		memory = memory[:num_steps,:]
-		memory = memory.expand(z.size(0),-1,-1) # copy the memory for each batch position
-		previous_output = z.new_zeros(size=(z.size(0),),dtype=torch.long)
-		previous_output[:] = self.SOS_TOKEN # <sos> token
-		# run rnn
-		for i in range(num_steps):
-			# for the input
-			previous_output = self.activation(self.embedding(previous_output)) # previous_output is of size [batch,hidden_size]
-			step_input = torch.cat([previous_output,z],dim=1) # step_input is of size [batch,step_input_size]
-			step_input = self.batchnorm2(step_input)
-			h = self.gru(step_input,h)
-			out = self.activation(h)
-			out = self.batchnorm3(out)
-			out = self.h2o(out)
-			out = self.softmax(out)
-			if x is not None: # teacher forcing
-				previous_output = x[:,i]
-			else: # use prediction as input
-				previous_output = torch.argmax(out,dim=-1)
-			predictions.append(out)
-			# for the memory
-			step_mem = memory[:,i,:] # step_mem is of size [batch,step_input_size]
-			m = self.gru(step_mem,m)
-			mem = self.activation(m)
-			mem = self.batchnorm3(mem)
-			mem = self.h2o(mem)
-			mem = self.softmax(mem)
-			pred_mem.append(mem)
-		output = torch.stack(predictions).transpose(1,0)
-		output = self.activation(self.linear(output).view(-1,num_steps,self.output_size,self.num_heads)) # shape is [batch,num_steps,output_size,num_heads]
-		memory = torch.stack(pred_mem).transpose(1,0)
-		memory = self.activation(self.linear(memory).view(-1,num_steps,self.output_size,self.num_heads)) # shape is [batch,num_steps,output_size,num_heads]
-		output = self.similarity(output,memory) # now output is [batch,num_steps,output_size]
-		return output
-
+	def forward(self,input,memory,hx=None,hm=None):
+		if hx is None:
+			hx = input.new_zeros(input.size(0),self.hidden_size,requires_grad=False)
+		if hm is None:
+			hm = memory.new_zeros(memory.size(0),self.hidden_size,requires_grad=False)
+		hx = self.gru(input,hx).view(-1,self.hidden_size,self.sim_size)
+		hm = self.gru(memory,hm).view(-1,self.hidden_size,self.sim_size)
+		return self.similarity(hx,hm),hx,hm
 
 ######################################
 ####       Attention layers        ###

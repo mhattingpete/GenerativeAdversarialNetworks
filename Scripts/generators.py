@@ -3,7 +3,7 @@ from torch import nn
 import torch
 
 # local imports
-from layers import MultiLayerPerceptron,PixelwiseNormalization,Conv2dEqualized,SelfAttention,GumbelSoftmax,RelationalRNNCell,MemoryLayer
+from layers import MultiLayerPerceptron,PixelwiseNormalization,Conv2dEqualized,SelfAttention,GumbelSoftmax,RelationalRNNCell,MemoryCell
 
 #######################################
 #####    Unconditional models     #####
@@ -315,21 +315,60 @@ class GumbelRelRNNGenerator(nn.Module):
 				previous_output = torch.argmax(out,dim=-1).detach()
 			predictions.append(out)
 		output = torch.stack(predictions).transpose(1,0)
-		del memory
 		return output
 
 	def initMemory(self,batch_size):
 		return self.relRNN.initMemory(batch_size)
 
 class MemoryGenerator(nn.Module):
-	def __init__(self,hidden_size,noise_size,output_size,max_seq_len,activation=nn.LeakyReLU(0.2),num_heads=8,similarity=nn.CosineSimilarity(dim=-1),SOS_TOKEN=None):
+	def __init__(self,hidden_size,noise_size,output_size,max_seq_len,activation=nn.LeakyReLU(0.2),sim_size=4,similarity=nn.CosineSimilarity(dim=-1),SOS_TOKEN=None):
 		super().__init__()
+		# internal variable sizes
+		self.hidden_size = hidden_size
+		step_input_size = hidden_size + hidden_size
+		self.output_size = output_size
 		# layer definitions
-		SOS_TOKEN = SOS_TOKEN if SOS_TOKEN else output_size-1
-		self.memory_layer = MemoryLayer(hidden_size,noise_size,output_size,max_seq_len,SOS_TOKEN,num_heads=num_heads,activation=activation)
+		self.z2h = nn.Linear(noise_size,hidden_size)
+		self.batchnorm1 = nn.BatchNorm1d(hidden_size)
+		self.embedding = nn.Embedding(output_size,hidden_size)
+		self.batchnorm2 = nn.BatchNorm1d(step_input_size)
+		self.memcell = MemoryCell(step_input_size,hidden_size,sim_size=sim_size,similarity=similarity)
+		self.batchnorm3 = nn.BatchNorm1d(hidden_size)
+		self.h2o = nn.Linear(hidden_size,output_size)
 		self.activation = activation
+		self.SOS_TOKEN = SOS_TOKEN if SOS_TOKEN else output_size-1
+		self.max_seq_len = max_seq_len
+		self.memory = nn.Parameter(torch.randn(1,self.max_seq_len,step_input_size))
 		self.last_activation = GumbelSoftmax()
 
 	def forward(self,z,num_steps,temperature,x=None):
-		output = self.last_activation(self.memory_layer(z,num_steps,temperature,x=x),temperature)
+		if num_steps > self.max_seq_len:
+			raise ValueError("num_steps ({}) must be less or equal to max_seq_len ({})".format(num_steps,self.max_seq_len))
+		predictions = []
+		z = self.batchnorm1(self.activation(self.z2h(z)))
+		hx = z # initialize the hidden state
+		hm = z # initialize the hidden state for memory
+		memory = self.memory
+		memory = memory[:num_steps,:]
+		memory = memory.expand(z.size(0),-1,-1) # copy the memory for each batch position
+		previous_output = z.new_zeros(size=(z.size(0),),dtype=torch.long)
+		previous_output[:] = self.SOS_TOKEN # <sos> token
+		# run rnn
+		for i in range(num_steps):
+			# for the input
+			previous_output = self.activation(self.embedding(previous_output)) # previous_output is of size [batch,hidden_size]
+			step_input = torch.cat([previous_output,z],dim=1) # step_input is of size [batch,step_input_size]
+			step_input = self.batchnorm2(step_input)
+			step_mem = memory[:,i,:] # step_mem is of size [batch,step_input_size]
+			out,hx,hm = self.memcell(step_input,step_mem,hx=hx,hm=hm)
+			out = self.activation(out)
+			out = self.batchnorm3(out)
+			out = self.h2o(out)
+			out = self.last_activation(out,temperature)
+			if x is not None: # teacher forcing
+				previous_output = x[:,i]
+			else: # use prediction as input
+				previous_output = torch.argmax(out,dim=-1)
+			predictions.append(out)			
+		output = torch.stack(predictions).transpose(1,0)
 		return output

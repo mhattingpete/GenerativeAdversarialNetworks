@@ -3,7 +3,7 @@ from torch import nn
 import torch
 
 # local imports
-from layers import MultiLayerPerceptron,MiniBatchStd,Conv2dEqualized,LinearEqualized,SelfAttention
+from layers import MultiLayerPerceptron,MiniBatchStd,Conv2dEqualized,LinearEqualized,SelfAttention,MemoryCell
 
 #######################################
 #####    Unconditional models     #####
@@ -238,3 +238,25 @@ class GumbelRelRNNDiscriminator(nn.Module):
 			x_embedded.append(x_emb)
 		x = torch.stack(x_embedded,dim=1)
 		return x.view(-1,self.num_embeddings,self.output_size)
+
+class MemoryDiscriminator(nn.Module):
+	def __init__(self,input_size,hidden_size,output_size,max_seq_len,activation=nn.LeakyReLU(0.2),sim_size=4,similarity=nn.CosineSimilarity(dim=-1)):
+		super().__init__()
+		self.output_size = output_size
+		self.embedding = nn.Linear(input_size,hidden_size)
+		self.batchnorm = nn.BatchNorm1d(hidden_size)
+		self.activation = activation
+		self.memcell = MemoryCell(hidden_size,output_size,sim_size=sim_size,similarity=similarity)
+		self.max_seq_len = max_seq_len
+		self.memory = nn.Parameter(torch.randn(1,self.max_seq_len,hidden_size))
+
+	def forward(self,x):
+		x = self.batchnorm(self.activation(self.embedding(x)).transpose(2,1)).transpose(1,2)
+		memory = self.memory
+		memory = memory[:x.size(1),:]
+		memory = memory.expand(x.size(0),-1,-1) # copy the memory for each batch position
+		hx = None
+		hm = None
+		for i in range(num_steps):
+			out,hx,hm = self.memcell(x[:,i,:],memory[:,i,:],hx=hx,hm=hm)
+		return out.view(-1,self.output_size)
