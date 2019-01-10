@@ -1,7 +1,7 @@
 import torch
 import os
 import errno
-from torch import nn
+from torch import nn,autograd
 
 def tensor_to_list_of_words(batch,num_to_word_vocab):
 	text_translated = []
@@ -74,7 +74,8 @@ def onehot(vec,output_size):
 def num_parameters(model):
 	return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
-class RaGANLoss:
+class RaSGANLoss: 
+	# Relativistic Standard GAN
 	def __init__(self):
 		self.loss_fun = nn.BCEWithLogitsLoss()
 
@@ -84,3 +85,38 @@ class RaGANLoss:
 		else:
 			target = fake_target(N,input.device)
 		return self.loss_fun(input-torch.mean(opposite,dim=0),target)
+
+class WGAN_GPLoss:
+	# Wasserstein GP GAN
+	def __init__(self,discriminator):
+		self.discriminator = discriminator
+
+	def generator_loss(self,pred_fake):
+		return -torch.mean(pred_fake)
+
+	def discriminator_loss(self,pred_real,pred_fake,real_data,fake_data):
+		batch_size = real_data.size(0)
+		penalty = self.calc_gradient_penalty(real_data.view(batch_size,-1),fake_data.view(batch_size,-1),real_data.size())
+		return pred_fake.mean() - pred_real.mean() + penalty
+
+	def calc_gradient_penalty(self,real_data,fake_data,original_size):
+		LAMBDA = 10 # recommended value from the original paper
+	    batch_size = real_data.size(0)
+	    alpha = torch.rand(batch_size,1)
+	    alpha = alpha.expand(real_data.size())
+	    alpha = alpha.to(real_data.device) 
+	    
+	    interpolates = alpha * real_data + ((1 - alpha) * fake_data)
+	    interpolates = torch.tensor(interpolates,requires_grad=True)
+	    interpolates = interpolates.to(real_data.device)
+	    
+	    disc_interpolates = self.discriminator(interpolates.view(original_size)).view(-1)
+
+	    gradients = autograd.grad(outputs=disc_interpolates,inputs=interpolates,
+	                              grad_outputs=torch.ones(batch_size).to(real_data.device),
+	                              create_graph=True,retain_graph=True,only_inputs=True)[0]
+	    gradient_penalty = ((gradients.norm(p=2,dim=1)-1)**2).mean()*LAMBDA
+	    return gradient_penalty
+
+
+

@@ -126,7 +126,13 @@ if use_g_lr_scheduler:
 		patience=config["model_config"]["generator"]["lr_scheduler"]["patience"],verbose=True)
 
 # losses
-loss_fun = RaGANLoss()#nn.BCEWithLogitsLoss()
+supported_losses = ["RaSGAN","WGAN-GP"]
+loss_name = config["train_config"]["loss_fun"] if config["train_config"]["loss_fun"] in supported_losses else: "WGAN-GP"
+if loss_name == "RaSGAN": # RaSGAN
+	loss_fun = RaSGANLoss()
+else: # WGAN-GP
+	loss_fun = WGAN_GPLoss(discriminator)
+
 loss_weight = torch.ones(num_classes).to(device)
 loss_weight[SOS_TOKEN] = 0.0
 #loss_weight[EOS_TOKEN] = 0.0
@@ -161,30 +167,25 @@ def train_generator(real_data_onehot,fake_data,optimizer):
 	N = fake_data.size(0)
 	# Reset gradients
 	optimizer.zero_grad()
-	# 1.1 Train on Real Data
-	pred_real = discriminator(real_data_onehot)
+	if loss_name == "RaSGAN":
+		# 1.1 Train on Real Data
+		pred_real = discriminator(real_data_onehot)
 	# 1.2 Train on Fake Data
 	pred_fake = discriminator(fake_data)
-	# compute the average of c_x_*
-	#c_x_r_mean = torch.mean(c_x_r,dim=0)
-	#c_x_f_mean = torch.mean(c_x_f,dim=0)
 	if multiple_embeddings:
-		#losses_real = []
-		#losses_fake = []
 		losses = []
 		for i in range(pred_real.size(1)):
-			losses.append(loss_fun(input=pred_fake[:,i,:],opposite=pred_real[:,i,:],target_is_real=True) + \
-				loss_fun(input=pred_real[:,i,:],opposite=pred_fake[:,i,:],target_is_real=False))
-			#losses_real.append(loss_fun(c_x_r[:,i,:]-c_x_f_mean[i,:],fake_target(N,device)))
-			#losses_fake.append(loss_fun(c_x_f[:,i,:]-c_x_r_mean[i,:],true_target(N,device)))
-		#loss_real = torch.stack(losses_real).mean()
-		#loss_fake = torch.stack(losses_fake).mean()
+			if loss_name == "RaSGAN":
+				losses.append(loss_fun(input=pred_fake[:,i,:],opposite=pred_real[:,i,:],target_is_real=True) + \
+					loss_fun(input=pred_real[:,i,:],opposite=pred_fake[:,i,:],target_is_real=False))
+			else: # WGAN-GP
+				losses.append(loss_fun.generator_loss(pred_fake[:,i,:]))
 		loss = torch.stack(losses).mean()
 	else:
-		loss = loss_fun(input=pred_fake,opposite=pred_real,target_is_real=True) + loss_fun(input=pred_real,opposite=pred_fake,target_is_real=False)
-		#loss_real = loss_fun(c_x_r-c_x_f_mean,fake_target(N,device))
-		#loss_fake = loss_fun(c_x_f-c_x_r_mean,true_target(N,device))
-	#loss = (loss_real + loss_fake)/2.0
+		if loss_name == "RaSGAN":
+			loss = loss_fun(input=pred_fake,opposite=pred_real,target_is_real=True) + loss_fun(input=pred_real,opposite=pred_fake,target_is_real=False)
+		else: # WGAN-GP
+			loss = loss_fun.generator_loss(pred_fake)
 	loss.backward()
 	optimizer.step()
 	return loss
@@ -200,26 +201,20 @@ def train_discriminator(real_data_onehot,fake_data,optimizer):
 	pred_real = discriminator(real_data_onehot)
 	# 1.2 Train on Fake Data
 	pred_fake = discriminator(fake_data)
-	# compute the average of c_x_*
-	#c_x_r_mean = torch.mean(c_x_r,dim=0)
-	#c_x_f_mean = torch.mean(c_x_f,dim=0)
 	if multiple_embeddings:
-		#losses_real = []
-		#losses_fake = []
 		losses = []
 		for i in range(pred_real.size(1)):
-			losses.append(loss_fun(input=pred_real[:,i,:],opposite=pred_fake[:,i,:],target_is_real=True) + \
-				loss_fun(input=pred_fake[:,i,:],opposite=pred_real[:,i,:],target_is_real=False))
-			#losses_real.append(loss_fun(c_x_r[:,i,:]-c_x_f_mean[i,:],true_target(N,device)))
-			#losses_fake.append(loss_fun(c_x_f[:,i,:]-c_x_r_mean[i,:],fake_target(N,device)))
-		#loss_real = torch.stack(losses_real).mean()
-		#loss_fake = torch.stack(losses_fake).mean()
+			if loss_name == "RaSGAN":
+				losses.append(loss_fun(input=pred_real[:,i,:],opposite=pred_fake[:,i,:],target_is_real=True) + \
+					loss_fun(input=pred_fake[:,i,:],opposite=pred_real[:,i,:],target_is_real=False))
+			else: # WGAN-GP
+				losses.append(loss_fun.discriminator_loss(pred_real[:,i,:],pred_fake[:,i,:],real_data[:,i,:],fake_data[:,i,:]))
 		loss = torch.stack(losses).mean()
 	else:
-		#loss_real = loss_fun(c_x_r-c_x_f_mean,true_target(N,device))
-		#loss_fake = loss_fun(c_x_f-c_x_r_mean,fake_target(N,device))
-		loss = loss_fun(input=pred_real,opposite=pred_fake,target_is_real=True) + loss_fun(input=pred_fake,opposite=pred_real,target_is_real=False)
-	#loss = (loss_real + loss_fake)/2.0
+		if loss_name == "RaSGAN":
+			loss = loss_fun(input=pred_real,opposite=pred_fake,target_is_real=True) + loss_fun(input=pred_fake,opposite=pred_real,target_is_real=False)
+		else: # WGAN-GP
+			loss = loss_fun.discriminator_loss(pred_real,pred_fake,real_data,fake_data)
 	loss.backward()
 	# 1.3 Update weights with gradients
 	optimizer.step()
