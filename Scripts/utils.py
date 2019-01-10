@@ -80,6 +80,7 @@ class RaSGANLoss:
 		self.loss_fun = nn.BCEWithLogitsLoss()
 
 	def __call__(self,input,opposite,target_is_real):
+		N = input.size(0)
 		if target_is_real:
 			target = true_target(N,input.device)
 		else:
@@ -117,6 +118,3 @@ class WGAN_GPLoss:
 	                              create_graph=True,retain_graph=True,only_inputs=True)[0]
 	    gradient_penalty = ((gradients.norm(p=2,dim=1)-1)**2).mean()*LAMBDA
 	    return gradient_penalty
-
-
-
