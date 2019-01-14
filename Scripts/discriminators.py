@@ -248,7 +248,7 @@ class MemoryDiscriminator(nn.Module):
 		self.embedding = nn.Linear(input_size,hidden_size)
 		self.batchnorm = nn.BatchNorm1d(hidden_size)
 		self.activation = activation
-		self.memcell = MemoryCell(hidden_size,output_size,sim_size=sim_size,similarity=similarity)
+		self.memcell = MemoryCell(hidden_size,output_size,sim_size=sim_size,similarity=similarity,use_fused=False)
 		self.max_seq_len = max_seq_len
 		self.memory = nn.Parameter(torch.randn(1,self.max_seq_len,hidden_size))
 
@@ -259,6 +259,6 @@ class MemoryDiscriminator(nn.Module):
 		memory = memory.expand(x.size(0),-1,-1) # copy the memory for each batch position
 		hx = None
 		hm = None
-		for i in range(num_steps):
+		for i in range(x.size(1)):
 			out,hx,hm = self.memcell(x[:,i,:],memory[:,i,:],hx=hx,hm=hm)
 		return out.view(-1,self.output_size)

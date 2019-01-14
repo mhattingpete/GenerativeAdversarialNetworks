@@ -27,6 +27,27 @@ class MultiLayerPerceptron(nn.Module):
 	def __repr__(self):
 		return self.__class__.__name__ +"(hidden_sizes = {})".format(self.hidden_sizes)
 
+class GRU_Cell(nn.Module):
+	def __init__(self,input_size,hidden_size,bias=True):
+		self.input_size = input_size
+		self.hidden_size = hidden_size
+		self.bias = bias
+		self.x2h = nn.Linear(input_size,3*hidden_size,bias=bias)
+		self.h2h = nn.Linear(hidden_size,3*hidden_size,bias=bias)
+
+	def forward(self,x,hx):
+		if hx is None:
+			hx = input.new_zeros(input.size(0),self.hidden_size,requires_grad=False)
+		gate_x = self.x2h(x)
+		gate_h = self.h2h(hx)
+		i_r,i_i,i_n = gate_x.chunk(3,1)
+		h_r,h_i,h_n = gate_h.chunk(3,1)
+		resetgate = F.sigmoid(i_r+h_r)
+		inputgate = F.sigmoid(i_i+h_i)
+		newgate = F.tanh(i_n+(resetgate*h_n))
+		hx = newgate+inputgate*(hidden-newgate)
+		return hx
+
 class Conv2dEqualized(nn.Module):
 	def __init__(self,in_channels,out_channels,kernel_size,stride=1,padding=0,dilation=1,groups=1):
 		super().__init__()
@@ -329,23 +350,28 @@ class RelationalRNNCell(nn.Module):
 ######################################
 
 class MemoryCell(nn.Module):
-	def __init__(self,input_size,hidden_size,sim_size=4,similarity=nn.CosineSimilarity(dim=-1)):
+	def __init__(self,input_size,hidden_size,sim_size=4,similarity=nn.CosineSimilarity(dim=-1),use_fused=True):
+		# use_fused: True to use C optimized version of GRUCell otherwise use local implementation
+		# note that C optimized version does not support autograd.grad function
 		super().__init__()
 		# internal variable sizes
 		self.hidden_size = hidden_size
 		self.sim_size = sim_size
-		self.gru = nn.GRUCell(input_size,hidden_size)
+		self.gru = nn.GRUCell(input_size,hidden_size) if use_fused else GRU_Cell(input_size,hidden_size)
 		self.linear = nn.Linear(hidden_size,self.sim_size*hidden_size)
 		self.similarity = similarity
+		self.activation = nn.ELU()
 
 	def forward(self,input,memory,hx=None,hm=None):
 		if hx is None:
 			hx = input.new_zeros(input.size(0),self.hidden_size,requires_grad=False)
 		if hm is None:
 			hm = memory.new_zeros(memory.size(0),self.hidden_size,requires_grad=False)
-		hx = self.gru(input,hx).view(-1,self.hidden_size,self.sim_size)
-		hm = self.gru(memory,hm).view(-1,self.hidden_size,self.sim_size)
-		return self.similarity(hx,hm),hx,hm
+		hx = self.gru(input,hx)
+		hm = self.gru(memory,hm)
+		hx_sim = self.activation(self.linear(hx)).view(-1,self.hidden_size,self.sim_size)
+		hm_sim = self.activation(self.linear(hm)).view(-1,self.hidden_size,self.sim_size)
+		return self.similarity(hx_sim,hm_sim),hx,hm
 
 ######################################
 ####       Attention layers        ###
