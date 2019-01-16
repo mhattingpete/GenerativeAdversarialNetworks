@@ -29,6 +29,7 @@ class MultiLayerPerceptron(nn.Module):
 
 class GRU_Cell(nn.Module):
 	def __init__(self,input_size,hidden_size,bias=True):
+		super().__init__()
 		self.input_size = input_size
 		self.hidden_size = hidden_size
 		self.bias = bias
@@ -42,10 +43,10 @@ class GRU_Cell(nn.Module):
 		gate_h = self.h2h(hx)
 		i_r,i_i,i_n = gate_x.chunk(3,1)
 		h_r,h_i,h_n = gate_h.chunk(3,1)
-		resetgate = F.sigmoid(i_r+h_r)
-		inputgate = F.sigmoid(i_i+h_i)
-		newgate = F.tanh(i_n+(resetgate*h_n))
-		hx = newgate+inputgate*(hidden-newgate)
+		resetgate = torch.sigmoid(i_r+h_r)
+		inputgate = torch.sigmoid(i_i+h_i)
+		newgate = torch.tanh(i_n+(resetgate*h_n))
+		hx = newgate+inputgate*(hx-newgate)
 		return hx
 
 class Conv2dEqualized(nn.Module):

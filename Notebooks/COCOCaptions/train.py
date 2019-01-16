@@ -16,7 +16,7 @@ from tensorboardX import SummaryWriter
 import random
 from nltk.translate.bleu_score import sentence_bleu
 
-from utils import onehot,num_parameters,sample_noise,save_model,load_model,tensor_to_list_of_words,RaGANLoss
+from utils import onehot,num_parameters,sample_noise,save_model,load_model,tensor_to_list_of_words,RaSGANLoss,WGAN_GPLoss
 from visualize import tensor_to_words
 import generators
 import discriminators
@@ -93,7 +93,7 @@ elif "hidden_size" in config["model_config"]["generator"] and "sim_size" in conf
 "similarity" in config["model_config"]["generator"]:
 	generator = getattr(generators,config["model_config"]["generator"]["name"])(hidden_size=config["model_config"]["generator"]["hidden_size"],
 		noise_size=noise_size,output_size=num_classes,max_seq_len=max_seq_len,sim_size=config["model_config"]["generator"]["sim_size"],
-		similarity=getattr(nn,generators,config["model_config"]["generator"]["similarity"])(dim=-1),SOS_TOKEN=SOS_TOKEN).to(device)
+		similarity=getattr(nn,config["model_config"]["generator"]["similarity"])(dim=-1),SOS_TOKEN=SOS_TOKEN).to(device)
 else:
 	generator = getattr(generators,config["model_config"]["generator"]["name"])(hidden_size=config["model_config"]["generator"]["hidden_size"],
 		noise_size=noise_size,output_size=num_classes,SOS_TOKEN=SOS_TOKEN).to(device)
@@ -108,7 +108,7 @@ elif "hidden_size" in config["model_config"]["discriminator"] and "sim_size" in 
 	discriminator = getattr(discriminators,config["model_config"]["discriminator"]["name"])(input_size=num_classes,
 	hidden_size=config["model_config"]["discriminator"]["hidden_size"],output_size=1,
 	max_seq_len=max_seq_len,sim_size=config["model_config"]["discriminator"]["sim_size"],
-	similarity=getattr(nn,discriminator,config["model_config"]["discriminator"]["similarity"])(dim=-1)).to(device)
+	similarity=getattr(nn,config["model_config"]["discriminator"]["similarity"])(dim=-1)).to(device)
 else:
 	discriminator = getattr(discriminators,config["model_config"]["discriminator"]["name"])(input_size=num_classes,
 	hidden_size=config["model_config"]["discriminator"]["hidden_size"],output_size=1).to(device)
@@ -127,7 +127,7 @@ if use_g_lr_scheduler:
 
 # losses
 supported_losses = ["RaSGAN","WGAN-GP"]
-loss_name = config["train_config"]["loss_fun"] if config["train_config"]["loss_fun"] in supported_losses else: "WGAN-GP"
+loss_name = config["train_config"]["loss_fun"] if config["train_config"]["loss_fun"] in supported_losses else "WGAN-GP"
 if loss_name == "RaSGAN": # RaSGAN
 	loss_fun = RaSGANLoss()
 else: # WGAN-GP
@@ -208,13 +208,13 @@ def train_discriminator(real_data_onehot,fake_data,optimizer):
 				losses.append(loss_fun(input=pred_real[:,i,:],opposite=pred_fake[:,i,:],target_is_real=True) + \
 					loss_fun(input=pred_fake[:,i,:],opposite=pred_real[:,i,:],target_is_real=False))
 			else: # WGAN-GP
-				losses.append(loss_fun.discriminator_loss(pred_real[:,i,:],pred_fake[:,i,:],real_data[:,i,:],fake_data[:,i,:]))
+				losses.append(loss_fun.discriminator_loss(pred_real[:,i,:],pred_fake[:,i,:],real_data_onehot[:,i,:],fake_data[:,i,:]))
 		loss = torch.stack(losses).mean()
 	else:
 		if loss_name == "RaSGAN":
 			loss = loss_fun(input=pred_real,opposite=pred_fake,target_is_real=True) + loss_fun(input=pred_fake,opposite=pred_real,target_is_real=False)
 		else: # WGAN-GP
-			loss = loss_fun.discriminator_loss(pred_real,pred_fake,real_data,fake_data)
+			loss = loss_fun.discriminator_loss(pred_real,pred_fake,real_data_onehot,fake_data)
 	loss.backward()
 	# 1.3 Update weights with gradients
 	optimizer.step()

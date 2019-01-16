@@ -57,7 +57,7 @@ class CocoCaptions(Dataset):
 				if len(caption) > max_seq_len:
 					max_seq_len = len(caption)
 				examples.append(Example.fromlist([caption],field))
-		self.max_seq_len = max_seq_len
+		self.max_seq_len = max_seq_len + 2 # one for <sos> and one for <eos>
 		super().__init__(examples=examples,fields=field)
 
 	@staticmethod
