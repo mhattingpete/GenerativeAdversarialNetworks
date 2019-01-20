@@ -96,7 +96,7 @@ elif "hidden_size" in config["model_config"]["generator"] and "sim_size" in conf
 		similarity=getattr(nn,config["model_config"]["generator"]["similarity"])(dim=-1),SOS_TOKEN=SOS_TOKEN).to(device)
 else:
 	generator = getattr(generators,config["model_config"]["generator"]["name"])(hidden_size=config["model_config"]["generator"]["hidden_size"],
-		noise_size=noise_size,output_size=num_classes,SOS_TOKEN=SOS_TOKEN).to(device)
+		noise_size=noise_size,output_size=num_classes,SOS_TOKEN=SOS_TOKEN,beam_width=config["model_config"]["generator"]["beam_width"]).to(device)
 
 multiple_embeddings = "num_embeddings" in config["model_config"]["discriminator"]
 if multiple_embeddings:
@@ -160,7 +160,7 @@ def pretrain_generator(real_data,fake_data,optimizer):
 	optimizer.step()
 	return loss
 
-def train_generator(real_data_onehot,fake_data,optimizer):
+def train_generator(discriminator,real_data_onehot,fake_data,optimizer):
 	'''
 	Train the generator to generate realistic samples and thereby fool the discriminator
 	'''
@@ -190,7 +190,7 @@ def train_generator(real_data_onehot,fake_data,optimizer):
 	optimizer.step()
 	return loss
 
-def train_discriminator(real_data_onehot,fake_data,optimizer):
+def train_discriminator(discriminator,real_data_onehot,fake_data,optimizer):
 	'''
 	Train the discriminator to distinguish between real and fake data
 	'''
@@ -288,7 +288,7 @@ while epoch < num_epochs:
 		with torch.no_grad():
 			fake_data = generator(z=noise_tensor,num_steps=num_steps,temperature=temperature).detach()
 		# Train D
-		d_error = train_discriminator(real_data_onehot,fake_data,d_optimizer)
+		d_error = train_discriminator(discriminator,real_data_onehot,fake_data,d_optimizer)
 
 		# 2. Train Generator every 'gen_train_freq' steps
 		if global_step % gen_train_freq == 0:
@@ -297,7 +297,7 @@ while epoch < num_epochs:
 				noise_tensor = sample_noise(N,noise_size,device)
 				fake_data = generator(z=noise_tensor,num_steps=num_steps,temperature=temperature)
 				# Train G
-				g_error = train_generator(real_data_onehot,fake_data,g_optimizer)
+				g_error = train_generator(discriminator,real_data_onehot,fake_data,g_optimizer)
 				g_error = g_error.item()
 		global_step += 1
 

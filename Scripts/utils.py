@@ -60,7 +60,7 @@ def true_target(num_samples,device):
 
 def fake_target(num_samples,device):
 	'''
-	Tensor of ones to match the fake target
+	Tensor of zeros to match the fake target
 	'''
 	return torch.zeros(num_samples,1).to(device)
 	
