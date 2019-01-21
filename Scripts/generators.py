@@ -191,6 +191,7 @@ class GumbelRNNGenerator(nn.Module):
 		super().__init__()
 		# internal variable sizes
 		self.hidden_size = hidden_size
+		self.output_size = output_size
 		step_input_size = hidden_size + hidden_size
 		# layer definitions
 		self.z2h = nn.Linear(noise_size,hidden_size)
@@ -206,12 +207,12 @@ class GumbelRNNGenerator(nn.Module):
 		self.beam_width = beam_width
 
 	def forward(self,z,num_steps,temperature,x=None):
-		if self.beam_width > 1:
-			return self.forward_beam(z=z,num_steps=num_steps,temperature=temperature,x=x)
+		if self.beam_width > 1 and x is None:
+			return self.forward_beam(z=z,num_steps=num_steps,temperature=temperature)
 		else:
 			return self.forward_greedy(z=z,num_steps=num_steps,temperature=temperature,x=x)
 
-	def forward_beam(self,z,num_steps,temperature,x=None):
+	def forward_beam(self,z,num_steps,temperature):
 		predictions = []
 		batch_size = z.size(0)
 		z = self.batchnorm1(self.activation(self.z2h(z))).repeat(self.beam_width,1)
@@ -221,7 +222,7 @@ class GumbelRNNGenerator(nn.Module):
 		# a table for storing the scores
 		scores = z.new_zeros(size=(batch_size*self.beam_width,self.output_size))
 		# an array of numbers for displacement ie. if batch_size is 2 and beam_width is 3 then this is [0,0,0,3,3,3]. This is used later for indexing
-		beam_displacement = torch.arange(start=0,end=batch_size*self.beam_width,step=self.beam_width,dtype=torch.long).view(-1,1).repeat(1,self.beam_width).view(-1)
+		beam_displacement = torch.arange(start=0,end=batch_size*self.beam_width,step=self.beam_width,dtype=torch.long,device=z.device).view(-1,1).repeat(1,self.beam_width).view(-1)
 		for i in range(num_steps):
 			input = self.activation(self.embedding(previous_output))
 			step_input = torch.cat([input,z],dim=1)
@@ -231,11 +232,27 @@ class GumbelRNNGenerator(nn.Module):
 			out = self.batchnorm3(out)
 			out = self.h2o(out)
 			out = self.last_activation(out,temperature)
-			if x is not None: # teacher forcing
-				previous_output = x[:,i]
-				predictions.append(out)
-			else: # use prediction as input
-				# compute new scores
+			# compute new scores
+			next_scores = scores + torch.log(out+1e-8)
+			# select top-k scores where k is the beam width
+			score,outputs = next_scores.view(batch_size,-1).topk(self.beam_width,dim=-1)
+			# flatten the output
+			outputs = outputs.view(-1)
+			# get the indices in the original onehot output by finding the module of the vocab size
+			indices = torch.fmod(outputs,self.output_size)
+			# find the index in the beam/batch for the onehot output. Add beam displacement to get correct index
+			beam_indices = torch.div(outputs,self.output_size) + beam_displacement
+			# check if some elements/words are repeated
+			res = torch.eq(previous_output,indices).nonzero()
+			# some elements/words is repeated
+			retries = 0
+			while res.shape[0] > 0:
+				mask = torch.ones(size=(batch_size*self.beam_width,self.output_size),requires_grad=False,device=z.device)
+				# set the mask to be zero when an option is non selectable
+				mask[beam_indices[res],indices[res]] = 0
+				# apply the mask
+				out = out * mask
+				# set the score for the repeated elements to be low
 				next_scores = scores + torch.log(out+1e-8)
 				# select top-k scores where k is the beam width
 				score,outputs = next_scores.view(batch_size,-1).topk(self.beam_width,dim=-1)
@@ -247,35 +264,17 @@ class GumbelRNNGenerator(nn.Module):
 				beam_indices = torch.div(outputs,self.output_size) + beam_displacement
 				# check if some elements/words are repeated
 				res = torch.eq(previous_output,indices).nonzero()
-				# some elements/words is repeated
-				retries = 0
-				while res.shape[0] > 0:
-					mask = torch.ones(size=(batch_size*self.beam_width,self.output_size),requires_grad=False,device=z.device)
-					# set the mask to be zero when an option is non selectable
-					mask[beam_indices[res],indices[res]] = 0
-					# apply the mask
-					out = out * mask
-					# set the score for the repeated elements to be low
-					next_scores = scores + torch.log(out+1e-8)
-					# select top-k scores where k is the beam width
-					score,outputs = next_scores.view(batch_size,-1).topk(self.beam_width,dim=-1)
-					# flatten the output
-					outputs = outputs.view(-1)
-					# get the indices in the original onehot output by finding the module of the vocab size
-					indices = torch.fmod(outputs,self.output_size)
-					# find the index in the beam/batch for the onehot output. Add beam displacement to get correct index
-					beam_indices = torch.div(outputs,self.output_size) + beam_displacement
-					# check if some elements/words are repeated
-					res = torch.eq(previous_output,indices).nonzero()
-					if retries > 10:
-						break
-					retries += 1
-				# copy the score for each selected candidate
-				scores = score.view(-1,1).repeat(1,self.output_size)
-				# append the prediction to output
-				predictions.append(out[beam_indices,:])
-				# detach the output such that we don't backpropagate through timesteps
-				previous_output = indices.detach()
+				if retries > 10:
+					break
+				retries += 1
+			# copy the score for each selected candidate
+			scores = score.view(-1,1).repeat(1,self.output_size)
+			# renormalize the output
+			out = out/out.sum(-1).view(-1,1).repeat(1,self.output_size)
+			# append the prediction to output
+			predictions.append(out[beam_indices,:])
+			# detach the output such that we don't backpropagate through timesteps
+			previous_output = indices.detach()
 		output = torch.stack(predictions).transpose(1,0)
 		# initialize an output_mask such that we can filter out sentences
 		output_mask = torch.zeros_like(output)

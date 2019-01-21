@@ -1,5 +1,5 @@
 {
-	"CUDA_VISIBLE_DEVICES":"1",
+	"CUDA_VISIBLE_DEVICES":"5",
 	"train_config":{
 		"num_epochs":200,
 		"epochs_pretrain":100,
@@ -7,7 +7,7 @@
 		"pretrain_temperature":1,
 		"gen_steps":1,
 		"gen_train_freq":5,
-		"loss_fun":"WGAN-GP"
+		"loss_fun":"RaSGAN"
 	},
 	"model_config":{
 		"save_name":"RNN-GAN",
@@ -16,6 +16,7 @@
 		"generator":{
 			"name":"GumbelRNNGenerator",
 			"hidden_size":256,
+			"beam_width":5,
 			"optimizer":"Adam",
 			"pre_lr":1e-2,
 			"lr":1e-4,
