@@ -16,7 +16,7 @@ from tensorboardX import SummaryWriter
 import random
 from nltk.translate.bleu_score import sentence_bleu
 
-from utils import onehot,num_parameters,sample_noise,save_model,load_model,tensor_to_list_of_words,RaGANLoss
+from utils import onehot,num_parameters,sample_noise,save_model,load_model,tensor_to_list_of_words
 from visualize import tensor_to_words
 import generators
 import discriminators
@@ -56,21 +56,19 @@ if "hidden_size" not in config["model_config"]["generator"] and "mem_slots" in c
 "head_size" in config["model_config"]["generator"] and "num_heads" in config["model_config"]["generator"]:
 	generator = getattr(generators,config["model_config"]["generator"]["name"])(mem_slots=config["model_config"]["generator"]["mem_slots"],
 		head_size=config["model_config"]["generator"]["head_size"],num_heads=config["model_config"]["generator"]["num_heads"],
-		noise_size=noise_size,output_size=num_classes,SOS_TOKEN=SOS_TOKEN).to(device)
+		noise_size=noise_size,output_size=num_classes,SOS_TOKEN=SOS_TOKEN,beam_width=config["model_config"]["generator"]["beam_width"]).to(device)
 elif "hidden_size" in config["model_config"]["generator"] and "sim_size" in config["model_config"]["generator"] and \
 "similarity" in config["model_config"]["generator"]:
 	generator = getattr(generators,config["model_config"]["generator"]["name"])(hidden_size=config["model_config"]["generator"]["hidden_size"],
 		noise_size=noise_size,output_size=num_classes,max_seq_len=max_seq_len,sim_size=config["model_config"]["generator"]["sim_size"],
-		similarity=getattr(nn,generators,config["model_config"]["generator"]["similarity"])(dim=-1),SOS_TOKEN=SOS_TOKEN).to(device)
+		similarity=getattr(nn,config["model_config"]["generator"]["similarity"])(dim=-1),SOS_TOKEN=SOS_TOKEN,beam_width=config["model_config"]["generator"]["beam_width"]).to(device)
 else:
 	generator = getattr(generators,config["model_config"]["generator"]["name"])(hidden_size=config["model_config"]["generator"]["hidden_size"],
-		noise_size=noise_size,output_size=num_classes,SOS_TOKEN=SOS_TOKEN).to(device)
+		noise_size=noise_size,output_size=num_classes,SOS_TOKEN=SOS_TOKEN,beam_width=config["model_config"]["generator"]["beam_width"]).to(device)
 
 # losses
 loss_weight = torch.ones(num_classes).to(device)
 loss_weight[SOS_TOKEN] = 0.0
-#loss_weight[EOS_TOKEN] = 0.0
-#loss_weight[UNK_TOKEN] = 0.0
 loss_weight[PAD_TOKEN] = 0.0
 pretrain_loss_fun = nn.NLLLoss(weight=loss_weight)
 
@@ -106,16 +104,20 @@ for n_batch,batch in enumerate(val_iter):
 	noise = sample_noise(N,noise_size,device)
 	fake_data = generator(z=noise,num_steps=num_steps,temperature=max_temperature,
 						  x=real_data.long())
+	fake_data_gen = generator(z=noise,num_steps=num_steps,temperature=max_temperature)
+
 	# Calculate nll_gen
 	nll_g_error = nll_gen(real_data,fake_data)
 	nll_gen_error.append(nll_g_error.item())
 
 	# Save sentences for bleu score calculation
-	fake_data_vals = torch.argmax(fake_data,dim=2)
-	fake_data_text = tensor_to_list_of_words(fake_data_vals,num_to_word_vocab)
 	real_data_text = tensor_to_list_of_words(real_data,num_to_word_vocab)
-	hypothesis_list.extend(fake_data_text)
 	reference.extend(real_data_text)
+
+	# Save sentences for bleu score calculation
+	fake_data_vals = torch.argmax(fake_data_gen,dim=2)
+	fake_data_text = tensor_to_list_of_words(fake_data_vals,num_to_word_vocab)
+	hypothesis_list.extend(fake_data_text)
 
 nll_gen_error = np.array(nll_gen_error)
 nll_gen_error_mean = nll_gen_error.mean()
