@@ -293,8 +293,8 @@ class GumbelRNNGenerator(nn.Module):
 		previous_output = z.new_zeros(size=(z.size(0),),dtype=torch.long)
 		previous_output[:] = self.SOS_TOKEN # <sos> token
 		for i in range(num_steps):
-			previous_output = self.activation(self.embedding(previous_output))
-			step_input = torch.cat([previous_output,z],dim=1)
+			input = self.activation(self.embedding(previous_output))
+			step_input = torch.cat([input,z],dim=1)
 			step_input = self.batchnorm2(step_input)
 			h = self.gru(step_input,h)
 			out = self.activation(h)
@@ -311,9 +311,10 @@ class GumbelRNNGenerator(nn.Module):
 		return output
 
 class GumbelSARNNGenerator(nn.Module):
-	def __init__(self,hidden_size,noise_size,output_size,activation=nn.LeakyReLU(0.2),SOS_TOKEN=None):
+	def __init__(self,hidden_size,noise_size,output_size,activation=nn.LeakyReLU(0.2),SOS_TOKEN=None,beam_width=1):
 		super().__init__()
 		# internal variable sizes
+		self.output_size = output_size
 		self.hidden_size = hidden_size
 		step_input_size = hidden_size + hidden_size
 		# layer definitions
@@ -329,8 +330,90 @@ class GumbelSARNNGenerator(nn.Module):
 		self.activation = activation
 		self.last_activation = GumbelSoftmax()
 		self.SOS_TOKEN = SOS_TOKEN if SOS_TOKEN is not None else output_size-1
+		self.beam_width = beam_width
 
 	def forward(self,z,num_steps,temperature,x=None):
+		if self.beam_width > 1 and x is None:
+			return self.forward_beam(z=z,num_steps=num_steps,temperature=temperature)
+		else:
+			return self.forward_greedy(z=z,num_steps=num_steps,temperature=temperature,x=x)
+
+	def forward_beam(self,z,num_steps,temperature):
+		predictions = []
+		batch_size = z.size(0)
+		z = self.batchnorm1(self.activation(self.z2h(z)))
+		z = self.batchnorm2(self.activation(self.attention(z))).repeat(self.beam_width,1)
+		h = z # initialize the hidden state
+		previous_output = z.new_zeros(size=(batch_size*self.beam_width,),dtype=torch.long)
+		previous_output[:] = self.SOS_TOKEN # <sos> token
+		# a table for storing the scores
+		scores = z.new_zeros(size=(batch_size*self.beam_width,self.output_size))
+		# an array of numbers for displacement ie. if batch_size is 2 and beam_width is 3 then this is [0,0,0,3,3,3]. This is used later for indexing
+		beam_displacement = torch.arange(start=0,end=batch_size*self.beam_width,step=self.beam_width,dtype=torch.long,device=z.device).view(-1,1).repeat(1,self.beam_width).view(-1)
+		for i in range(num_steps):
+			input = self.activation(self.embedding(previous_output))
+			step_input = torch.cat([input,z],dim=1)
+			step_input = self.batchnorm3(step_input)
+			h = self.gru(step_input,h)
+			out = self.activation(h)
+			out = self.batchnorm4(out)
+			out = self.h2o(out)
+			out = self.last_activation(out,temperature)
+			# compute new scores
+			next_scores = scores + torch.log(out+1e-8)
+			# select top-k scores where k is the beam width
+			score,outputs = next_scores.view(batch_size,-1).topk(self.beam_width,dim=-1)
+			# flatten the output
+			outputs = outputs.view(-1)
+			# get the indices in the original onehot output by finding the module of the vocab size
+			indices = torch.fmod(outputs,self.output_size)
+			# find the index in the beam/batch for the onehot output. Add beam displacement to get correct index
+			beam_indices = torch.div(outputs,self.output_size) + beam_displacement
+			# check if some elements/words are repeated
+			res = torch.eq(previous_output,indices).nonzero()
+			# some elements/words is repeated
+			retries = 0
+			while res.shape[0] > 0:
+				mask = torch.ones(size=(batch_size*self.beam_width,self.output_size),requires_grad=False,device=z.device)
+				# set the mask to be zero when an option is non selectable
+				mask[beam_indices[res],indices[res]] = 0
+				# apply the mask
+				out = out * mask
+				# set the score for the repeated elements to be low
+				next_scores = scores + torch.log(out+1e-8)
+				# select top-k scores where k is the beam width
+				score,outputs = next_scores.view(batch_size,-1).topk(self.beam_width,dim=-1)
+				# flatten the output
+				outputs = outputs.view(-1)
+				# get the indices in the original onehot output by finding the module of the vocab size
+				indices = torch.fmod(outputs,self.output_size)
+				# find the index in the beam/batch for the onehot output. Add beam displacement to get correct index
+				beam_indices = torch.div(outputs,self.output_size) + beam_displacement
+				# check if some elements/words are repeated
+				res = torch.eq(previous_output,indices).nonzero()
+				if retries > 10:
+					break
+				retries += 1
+			# copy the score for each selected candidate
+			scores = score.view(-1,1).repeat(1,self.output_size)
+			# renormalize the output
+			out = out/out.sum(-1).view(-1,1).repeat(1,self.output_size)
+			# append the prediction to output
+			predictions.append(out[beam_indices,:])
+			# detach the output such that we don't backpropagate through timesteps
+			previous_output = indices.detach()
+		output = torch.stack(predictions).transpose(1,0)
+		# initialize an output_mask such that we can filter out sentences
+		output_mask = torch.zeros_like(output)
+		# set the selected sentences output_mask to 1
+		output_mask[scores[:,0].view(batch_size,-1).argmax(dim=-1) + beam_displacement.view(batch_size,-1)[:,0]] = 1
+		# collect the best prediction for each sample in batch
+		output = (output*output_mask).view(batch_size,self.beam_width,num_steps,self.output_size)
+		# sum the beam sentences. Since the sentences that is not selected is zero this doesn't change the actual sentences
+		output = output.sum(1)
+		return output
+
+	def forward_greedy(self,z,num_steps,temperature,x=None):
 		predictions = []
 		z = self.batchnorm1(self.activation(self.z2h(z)))
 		z = self.batchnorm2(self.activation(self.attention(z)))
@@ -338,8 +421,8 @@ class GumbelSARNNGenerator(nn.Module):
 		previous_output = z.new_zeros(size=(z.size(0),),dtype=torch.long)
 		previous_output[:] = self.SOS_TOKEN # <sos> token
 		for i in range(num_steps):
-			previous_output = self.activation(self.embedding(previous_output))
-			step_input = torch.cat([previous_output,z],dim=1)
+			input = self.activation(self.embedding(previous_output))
+			step_input = torch.cat([input,z],dim=1)
 			step_input = self.batchnorm3(step_input)
 			h = self.gru(step_input,h)
 			out = self.activation(h)
@@ -356,13 +439,14 @@ class GumbelSARNNGenerator(nn.Module):
 		return output
 
 class GumbelRelRNNGenerator(nn.Module):
-	def __init__(self,mem_slots,head_size,num_heads,noise_size,output_size,activation=nn.LeakyReLU(0.2),gate_type="memory",dropout_prob=0.2,SOS_TOKEN=None):
+	def __init__(self,mem_slots,head_size,num_heads,noise_size,output_size,activation=nn.LeakyReLU(0.2),gate_type="memory",dropout_prob=0.2,SOS_TOKEN=None,beam_width=1):
 		super().__init__()
 		# internal variable sizes
 		hidden_size = head_size * num_heads
 		self.hidden_size = hidden_size
 		step_input_size = hidden_size + hidden_size
 		self.mem_slots = mem_slots
+		self.output_size = output_size
 		# layer definitions
 		self.input_dropout = nn.Dropout(p=dropout_prob)
 		self.z2m = nn.Linear(noise_size,hidden_size)
@@ -374,8 +458,92 @@ class GumbelRelRNNGenerator(nn.Module):
 		self.activation = activation
 		self.last_activation = GumbelSoftmax()
 		self.SOS_TOKEN = SOS_TOKEN if SOS_TOKEN is not None else output_size-1
+		self.beam_width = beam_width
 
 	def forward(self,z,num_steps,temperature,x=None):
+		if self.beam_width > 1 and x is None:
+			return self.forward_beam(z=z,num_steps=num_steps,temperature=temperature)
+		else:
+			return self.forward_greedy(z=z,num_steps=num_steps,temperature=temperature,x=x)
+
+	def forward_beam(self,z,num_steps,temperature):
+		predictions = []
+		batch_size = z.size(0)
+		z = self.batchnorm1(self.activation(self.z2m(z))).repeat(self.beam_width,1)
+		h = z # initialize the hidden state
+		# detach memory such that we don't backprop through the whole dataset
+		memory = self.initMemory(batch_size).to(z.device)
+		memory = memory.detach()
+		previous_output = z.new_zeros(size=(batch_size*self.beam_width,),dtype=torch.long)
+		previous_output[:] = self.SOS_TOKEN # <sos> token
+		# a table for storing the scores
+		scores = z.new_zeros(size=(batch_size*self.beam_width,self.output_size))
+		# an array of numbers for displacement ie. if batch_size is 2 and beam_width is 3 then this is [0,0,0,3,3,3]. This is used later for indexing
+		beam_displacement = torch.arange(start=0,end=batch_size*self.beam_width,step=self.beam_width,dtype=torch.long,device=z.device).view(-1,1).repeat(1,self.beam_width).view(-1)
+		for i in range(num_steps):
+			input = self.activation(self.embedding(previous_output))
+			if x is not None:
+				input = self.input_dropout(input)
+			step_input = torch.cat([input,z],dim=1)
+			step_input = self.batchnorm2(step_input)
+			memory = self.relRNN(step_input,memory)
+			out = self.m2o(memory.view(memory.size(0),-1))
+			out = self.last_activation(out,temperature)
+			# compute new scores
+			next_scores = scores + torch.log(out+1e-8)
+			# select top-k scores where k is the beam width
+			score,outputs = next_scores.view(batch_size,-1).topk(self.beam_width,dim=-1)
+			# flatten the output
+			outputs = outputs.view(-1)
+			# get the indices in the original onehot output by finding the module of the vocab size
+			indices = torch.fmod(outputs,self.output_size)
+			# find the index in the beam/batch for the onehot output. Add beam displacement to get correct index
+			beam_indices = torch.div(outputs,self.output_size) + beam_displacement
+			# check if some elements/words are repeated
+			res = torch.eq(previous_output,indices).nonzero()
+			# some elements/words is repeated
+			retries = 0
+			while res.shape[0] > 0:
+				mask = torch.ones(size=(batch_size*self.beam_width,self.output_size),requires_grad=False,device=z.device)
+				# set the mask to be zero when an option is non selectable
+				mask[beam_indices[res],indices[res]] = 0
+				# apply the mask
+				out = out * mask
+				# set the score for the repeated elements to be low
+				next_scores = scores + torch.log(out+1e-8)
+				# select top-k scores where k is the beam width
+				score,outputs = next_scores.view(batch_size,-1).topk(self.beam_width,dim=-1)
+				# flatten the output
+				outputs = outputs.view(-1)
+				# get the indices in the original onehot output by finding the module of the vocab size
+				indices = torch.fmod(outputs,self.output_size)
+				# find the index in the beam/batch for the onehot output. Add beam displacement to get correct index
+				beam_indices = torch.div(outputs,self.output_size) + beam_displacement
+				# check if some elements/words are repeated
+				res = torch.eq(previous_output,indices).nonzero()
+				if retries > 10:
+					break
+				retries += 1
+			# copy the score for each selected candidate
+			scores = score.view(-1,1).repeat(1,self.output_size)
+			# renormalize the output
+			out = out/out.sum(-1).view(-1,1).repeat(1,self.output_size)
+			# append the prediction to output
+			predictions.append(out[beam_indices,:])
+			# detach the output such that we don't backpropagate through timesteps
+			previous_output = indices.detach()
+		output = torch.stack(predictions).transpose(1,0)
+		# initialize an output_mask such that we can filter out sentences
+		output_mask = torch.zeros_like(output)
+		# set the selected sentences output_mask to 1
+		output_mask[scores[:,0].view(batch_size,-1).argmax(dim=-1) + beam_displacement.view(batch_size,-1)[:,0]] = 1
+		# collect the best prediction for each sample in batch
+		output = (output*output_mask).view(batch_size,self.beam_width,num_steps,self.output_size)
+		# sum the beam sentences. Since the sentences that is not selected is zero this doesn't change the actual sentences
+		output = output.sum(1)
+		return output
+
+	def forward_greedy(self,z,num_steps,temperature,x=None):
 		batch_size = z.size(0)
 		predictions = []
 		z = self.batchnorm1(self.activation(self.z2m(z)))
@@ -385,9 +553,9 @@ class GumbelRelRNNGenerator(nn.Module):
 		previous_output = z.new_zeros(size=(z.size(0),),dtype=torch.long)
 		previous_output[:] = self.SOS_TOKEN # <sos> token
 		for i in range(num_steps):
-			previous_output = self.activation(self.embedding(previous_output))
+			input = self.activation(self.embedding(previous_output))
 			if x is not None:
-				previous_output = self.input_dropout(previous_output)
+				input = self.input_dropout(input)
 			step_input = torch.cat([previous_output,z],dim=1)
 			step_input = self.batchnorm2(step_input)
 			memory = self.relRNN(step_input,memory)
@@ -406,7 +574,7 @@ class GumbelRelRNNGenerator(nn.Module):
 		return self.relRNN.initMemory(batch_size)
 
 class MemoryGenerator(nn.Module):
-	def __init__(self,hidden_size,noise_size,output_size,max_seq_len,activation=nn.LeakyReLU(0.2),sim_size=4,similarity=nn.CosineSimilarity(dim=-1),SOS_TOKEN=None):
+	def __init__(self,hidden_size,noise_size,output_size,max_seq_len,activation=nn.LeakyReLU(0.2),sim_size=4,similarity=nn.CosineSimilarity(dim=-1),SOS_TOKEN=None,beam_width=1):
 		super().__init__()
 		# internal variable sizes
 		self.hidden_size = hidden_size
@@ -425,8 +593,96 @@ class MemoryGenerator(nn.Module):
 		self.max_seq_len = max_seq_len
 		self.memory = nn.Parameter(torch.randn(1,self.max_seq_len,step_input_size))
 		self.last_activation = GumbelSoftmax()
+		self.beam_width = beam_width
 
 	def forward(self,z,num_steps,temperature,x=None):
+		if self.beam_width > 1 and x is None:
+			return self.forward_beam(z=z,num_steps=num_steps,temperature=temperature)
+		else:
+			return self.forward_greedy(z=z,num_steps=num_steps,temperature=temperature,x=x)
+
+	def forward_beam(self,z,num_steps,temperature):
+		if num_steps > self.max_seq_len:
+			raise ValueError("num_steps ({}) must be less or equal to max_seq_len ({})".format(num_steps,self.max_seq_len))
+		predictions = []
+		batch_size = z.size(0)
+		z = self.batchnorm1(self.activation(self.z2h(z))).repeat(self.beam_width,1)
+		hx = z # initialize the hidden state
+		hm = z # initialize the hidden state for memory
+		memory = self.memory
+		memory = memory[:num_steps,:]
+		memory = memory.expand(z.size(0),-1,-1) # copy the memory for each batch position
+		previous_output = z.new_zeros(size=(batch_size*self.beam_width,),dtype=torch.long)
+		previous_output[:] = self.SOS_TOKEN # <sos> token
+		# a table for storing the scores
+		scores = z.new_zeros(size=(batch_size*self.beam_width,self.output_size))
+		# an array of numbers for displacement ie. if batch_size is 2 and beam_width is 3 then this is [0,0,0,3,3,3]. This is used later for indexing
+		beam_displacement = torch.arange(start=0,end=batch_size*self.beam_width,step=self.beam_width,dtype=torch.long,device=z.device).view(-1,1).repeat(1,self.beam_width).view(-1)
+		for i in range(num_steps):
+			input = self.activation(self.embedding(previous_output))
+			step_input = torch.cat([input,z],dim=1)
+			step_input = self.batchnorm2(step_input)
+			step_mem = memory[:,i,:] # step_mem is of size [batch,step_input_size]
+			out,hx,hm = self.memcell(step_input,step_mem,hx=hx,hm=hm)
+			out = self.activation(h)
+			out = self.batchnorm3(out)
+			out = self.h2o(out)
+			out = self.last_activation(out,temperature)
+			# compute new scores
+			next_scores = scores + torch.log(out+1e-8)
+			# select top-k scores where k is the beam width
+			score,outputs = next_scores.view(batch_size,-1).topk(self.beam_width,dim=-1)
+			# flatten the output
+			outputs = outputs.view(-1)
+			# get the indices in the original onehot output by finding the module of the vocab size
+			indices = torch.fmod(outputs,self.output_size)
+			# find the index in the beam/batch for the onehot output. Add beam displacement to get correct index
+			beam_indices = torch.div(outputs,self.output_size) + beam_displacement
+			# check if some elements/words are repeated
+			res = torch.eq(previous_output,indices).nonzero()
+			# some elements/words is repeated
+			retries = 0
+			while res.shape[0] > 0:
+				mask = torch.ones(size=(batch_size*self.beam_width,self.output_size),requires_grad=False,device=z.device)
+				# set the mask to be zero when an option is non selectable
+				mask[beam_indices[res],indices[res]] = 0
+				# apply the mask
+				out = out * mask
+				# set the score for the repeated elements to be low
+				next_scores = scores + torch.log(out+1e-8)
+				# select top-k scores where k is the beam width
+				score,outputs = next_scores.view(batch_size,-1).topk(self.beam_width,dim=-1)
+				# flatten the output
+				outputs = outputs.view(-1)
+				# get the indices in the original onehot output by finding the module of the vocab size
+				indices = torch.fmod(outputs,self.output_size)
+				# find the index in the beam/batch for the onehot output. Add beam displacement to get correct index
+				beam_indices = torch.div(outputs,self.output_size) + beam_displacement
+				# check if some elements/words are repeated
+				res = torch.eq(previous_output,indices).nonzero()
+				if retries > 10:
+					break
+				retries += 1
+			# copy the score for each selected candidate
+			scores = score.view(-1,1).repeat(1,self.output_size)
+			# renormalize the output
+			out = out/out.sum(-1).view(-1,1).repeat(1,self.output_size)
+			# append the prediction to output
+			predictions.append(out[beam_indices,:])
+			# detach the output such that we don't backpropagate through timesteps
+			previous_output = indices.detach()
+		output = torch.stack(predictions).transpose(1,0)
+		# initialize an output_mask such that we can filter out sentences
+		output_mask = torch.zeros_like(output)
+		# set the selected sentences output_mask to 1
+		output_mask[scores[:,0].view(batch_size,-1).argmax(dim=-1) + beam_displacement.view(batch_size,-1)[:,0]] = 1
+		# collect the best prediction for each sample in batch
+		output = (output*output_mask).view(batch_size,self.beam_width,num_steps,self.output_size)
+		# sum the beam sentences. Since the sentences that is not selected is zero this doesn't change the actual sentences
+		output = output.sum(1)
+		return output
+
+	def forward_greedy(self,z,num_steps,temperature,x=None):
 		if num_steps > self.max_seq_len:
 			raise ValueError("num_steps ({}) must be less or equal to max_seq_len ({})".format(num_steps,self.max_seq_len))
 		predictions = []
@@ -441,8 +697,8 @@ class MemoryGenerator(nn.Module):
 		# run rnn
 		for i in range(num_steps):
 			# for the input
-			previous_output = self.activation(self.embedding(previous_output)) # previous_output is of size [batch,hidden_size]
-			step_input = torch.cat([previous_output,z],dim=1) # step_input is of size [batch,step_input_size]
+			input = self.activation(self.embedding(previous_output)) # previous_output is of size [batch,hidden_size]
+			step_input = torch.cat([input,z],dim=1) # step_input is of size [batch,step_input_size]
 			step_input = self.batchnorm2(step_input)
 			step_mem = memory[:,i,:] # step_mem is of size [batch,step_input_size]
 			out,hx,hm = self.memcell(step_input,step_mem,hx=hx,hm=hm)
