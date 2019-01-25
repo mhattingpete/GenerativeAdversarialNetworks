@@ -1,5 +1,7 @@
 import torch
 from torch import nn
+import numpy as np
+import math
 
 ######################################
 ####        Standard layers        ###
@@ -28,6 +30,10 @@ class MultiLayerPerceptron(nn.Module):
 		return self.__class__.__name__ +"(hidden_sizes = {})".format(self.hidden_sizes)
 
 class GRU_Cell(nn.Module):
+	"""
+	Implemented due to pytorch isn't able to compute the gradient of the gradient of the inbuilt GRUCell yet
+	This functionality is used in WGAN-GP loss
+	"""
 	def __init__(self,input_size,hidden_size,bias=True):
 		super().__init__()
 		self.input_size = input_size
@@ -79,11 +85,11 @@ class LinearEqualized(nn.Module):
 class PositionWiseLinear(nn.Module):
 	def __init__(self,input_size,hidden_size,output_size):
 		super().__init__()
-		self.layers = nn.Sequential([
+		self.layers = nn.Sequential(
 			nn.Linear(input_size,hidden_size),
 			nn.ReLU(),
 			nn.Linear(hidden_size,output_size)
-			])
+			)
 
 	def forward(self,x):
 		return self.layers(x)
@@ -378,56 +384,123 @@ class MemoryCell(nn.Module):
 ####       Attention layers        ###
 ######################################
 
-class Multihead_attention(nn.Module):
-	def __init__(self):
+class ScaledDotProductAttention(nn.Module):
+	def __init__(self,temperature):
 		super().__init__()
-		self.mem_slots = mem_slots # denoted as N
-		self.mem_size = head_size * num_heads
-		self.head_size = head_size
-		self.qkv_size = 3 * head_size
-		self.total_qkv_size = self.qkv_size * num_heads # denoted as F
-		self.num_heads = num_heads
-		self.qkv_layer = nn.Linear(self.mem_size,self.total_qkv_size,bias=False)
-		self.qkv_layernorm = nn.LayerNorm([self.mem_slots_plus_input,self.total_qkv_size])
+		self.temperature = temperature
 		self.softmax = nn.Softmax(dim=-1)
 
+	def forward(self,q,k,v,mask=None):
+		attn = torch.matmul(q/self.temperature,k.permute(0,1,3,2))
+		if mask is not None:
+			mask = mask.unsqueeze(1).repeat(1,attn.shape[1],1,1)
+			attn = attn.masked_fill(mask,-1e20)
+		attn = self.softmax(attn)
+		output = torch.matmul(attn,v)
+		return output,attn
 
-def multihead_attention(self,memory):
+class MultiheadAttention(nn.Module):
 	"""
 	Perform multi-head attention from the paper 'Attention is All You Need'
 	Arxiv url: https://arxiv.org/abs/1706.03762
-	
-	Args:
-	  memory: Memory tensor to perform attention on.
-	Returns:
-	  next_memory: Next memory tensor.
 	"""
-	
-	qkv = self.qkv_layer(memory)
-	qkv = self.qkv_layernorm(qkv)
-	
-	# split the qkv to multiple heads H
-	# [B, N, F] => [B, N, H, F/H]
-	qkv = qkv.view(qkv.size(0),self.mem_slots,self.num_heads,self.qkv_size)
+	def __init__(self,num_heads,d_model,d_k,d_v,dropout_prob=0.1):
+		super().__init__()
+		self.num_heads = num_heads
+		#self.d_k = d_k
+		#self.d_v = d_v
+		self.q_layer = nn.Linear(d_model,num_heads*d_k,bias=False)
+		self.k_layer = nn.Linear(d_model,num_heads*d_k,bias=False)
+		self.v_layer = nn.Linear(d_model,num_heads*d_v,bias=False)
+		self.attention = ScaledDotProductAttention(temperature=math.sqrt(num_heads*d_k))
+		self.layer_norm = nn.LayerNorm(d_model)
+		self.out_layer = nn.Linear(num_heads*d_v,d_model,bias=False)
+		self.dropout = nn.Dropout(dropout_prob)
 
-	# [B, N, H, F/H] => [B, H, N, F/H]
-	qkv = qkv.permute(0,2,1,3)
+	def forward(self,q,k,v,mask=None):
+		# save input for residual
+		res = q
+		# apply the layers for the inputs
+		q = self._split_heads(self.q_layer(q))
+		k = self._split_heads(self.k_layer(k))
+		v = self._split_heads(self.v_layer(v))
+		out,attn = self.attention(q,k,v,mask=mask)
+		out = self._merge_heads(out)
+		out = self.dropout(self.out_layer(out)+res)
+		out = self.layer_norm(out)
+		return out,attn
 
-	# split into query, key and value
-	# [B, H, N, head_size], [B, H, N, head_size], [B, H, N, head_size]
-	q,k,v = torch.split(qkv,[self.head_size,self.head_size,self.head_size],-1)
+	def _split_heads(self,x):
+		shape = x.shape
+		return x.view(shape[0],shape[1],self.num_heads,-1).permute(0,2,1,3)
 
-	# scale q with d_k, the dimensionality of the key vectors
-	q *= (self.head_size ** -0.5)
+	def _merge_heads(self,x):
+		shape = x.shape
+		return (x.permute(0,2,1,3)).contiguous().view(shape[0],shape[2],-1)
 
-	# make it [B, H, N, N]
-	att = torch.matmul(q,k.permute(0,1,3,2))
-	att = self.softmax(att)
+class PositionwiseFeedForward(nn.Module):
+	def __init__(self,d_model,d_ff=2048,dropout_prob=0.1):
+		super().__init__()
+		layers = [nn.Linear(d_model,d_ff),
+			nn.ReLU(),
+			nn.Linear(d_ff,d_model),
+			nn.Dropout(dropout_prob)]
+		self.layers = nn.Sequential(*layers)
 
-	# output is [B, H, N, V]
-	next_memory = torch.matmul(att,v)
+	def forward(self,x):
+		return self.layers(x)
 
-	# [B, H, N, V] => [B, N, H, V] => [B, N, H*V]
-	next_memory = next_memory.permute(0,2,1,3).contiguous()
-	next_memory = next_memory.view(next_memory.shape[0],next_memory.shape[1],-1)
-	return next_memory
+class TransformerDecoderLayer(nn.Module):
+	def __init__(self,d_model,num_heads,d_ff=2048,dropout_prob=0.1):
+		super().__init__()
+		d_k = int(d_model/num_heads)
+		self.mask_attention = MultiheadAttention(num_heads=num_heads,d_model=d_model,d_k=d_k,d_v=d_k,dropout_prob=dropout_prob)
+		self.layernorm1 = nn.LayerNorm(d_model)
+		self.attention = MultiheadAttention(num_heads=num_heads,d_model=d_model,d_k=d_k,d_v=d_k,dropout_prob=dropout_prob)
+		self.layernorm2 = nn.LayerNorm(d_model)
+		self.posff_layer = PositionwiseFeedForward(d_model=d_model,d_ff=d_ff,dropout_prob=dropout_prob)
+		self.layernorm3 = nn.LayerNorm(d_model)
+
+	def forward(self,x,mask=None):
+		res = x
+		x,_ = self.mask_attention(x,x,x,mask=mask)
+		x = self.layernorm1(x+res)
+		res = x
+		x,_ = self.attention(x,x,x)
+		x = self.layernorm2(x+res)
+		res = x
+		x = self.posff_layer(x)
+		x = self.layernorm3(x+res)
+		return x
+
+class PositionalEmbedding(nn.Module):
+	def __init__(self,max_seq_len,d_model):
+		super().__init__()
+		self.d_model = d_model
+		# create constant 'pe' matrix with values dependant on 
+		# pos and i
+		pe = torch.zeros(max_seq_len,d_model)
+		for pos in range(max_seq_len):
+			for i in range(0,d_model,2):
+				pe[pos,i] = math.sin(pos/(10000**((2*i)/d_model)))
+				pe[pos,i+1] = math.cos(pos/(10000**((2*(i+1))/d_model)))
+		pe = pe.unsqueeze(0)
+		self.register_buffer("pe",pe)
+
+	def forward(self,x):
+		x = x + math.sqrt(self.d_model)
+		seq_len = x.size(1)
+		x = x + torch.tensor(self.pe[:,:seq_len],requires_grad=False,device=x.device)
+		return x
+
+class TransformerDecoder(nn.Module):
+	def __init__(self,output_size,num_layers,d_model,num_heads,d_ff=2048,dropout_prob=0.1):
+		super().__init__()
+		# transformer layers
+		layers = [TransformerDecoderLayer(d_model=d_model,num_heads=num_heads,d_ff=d_ff,dropout_prob=dropout_prob) for _ in range(num_layers)]
+		self.layers = nn.ModuleList(layers)
+
+	def forward(self,x,mask=None):
+		for l in self.layers:
+			x = l(x,mask=mask)
+		return x

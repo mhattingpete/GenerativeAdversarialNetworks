@@ -94,6 +94,11 @@ elif "hidden_size" in config["model_config"]["generator"] and "sim_size" in conf
 	generator = getattr(generators,config["model_config"]["generator"]["name"])(hidden_size=config["model_config"]["generator"]["hidden_size"],
 		noise_size=noise_size,output_size=num_classes,max_seq_len=max_seq_len,sim_size=config["model_config"]["generator"]["sim_size"],
 		similarity=getattr(nn,config["model_config"]["generator"]["similarity"])(dim=-1),SOS_TOKEN=SOS_TOKEN,beam_width=config["model_config"]["generator"]["beam_width"]).to(device)
+elif "TransformerGenerator" in config["model_config"]["generator"]["name"]:
+	generator = getattr(generators,config["model_config"]["generator"]["name"])(hidden_size=config["model_config"]["generator"]["hidden_size"],
+		num_heads=config["model_config"]["generator"]["num_heads"],noise_size=noise_size,output_size=num_classes,
+		num_layers=config["model_config"]["generator"]["num_layers"],max_seq_len=max_seq_len,d_ff=config["model_config"]["generator"]["d_ff"],
+		SOS_TOKEN=SOS_TOKEN,PAD_TOKEN=PAD_TOKEN,beam_width=config["model_config"]["generator"]["beam_width"]).to(device)
 else:
 	generator = getattr(generators,config["model_config"]["generator"]["name"])(hidden_size=config["model_config"]["generator"]["hidden_size"],
 		noise_size=noise_size,output_size=num_classes,SOS_TOKEN=SOS_TOKEN,beam_width=config["model_config"]["generator"]["beam_width"]).to(device)

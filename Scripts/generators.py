@@ -4,6 +4,8 @@ import torch
 
 # local imports
 from layers import MultiLayerPerceptron,PixelwiseNormalization,Conv2dEqualized,SelfAttention,GumbelSoftmax,RelationalRNNCell,MemoryCell
+from layers import PositionalEmbedding,TransformerDecoder
+from utils import create_target_mask
 
 #######################################
 #####    Unconditional models     #####
@@ -714,3 +716,147 @@ class MemoryGenerator(nn.Module):
 			predictions.append(out)			
 		output = torch.stack(predictions).transpose(1,0)
 		return output
+
+class TransformerGenerator(nn.Module):
+	def __init__(self,hidden_size,num_heads,noise_size,output_size,num_layers,max_seq_len,d_ff=2048,activation=nn.LeakyReLU(0.2),SOS_TOKEN=None,PAD_TOKEN=None,beam_width=1):
+		super().__init__()
+		# internal variable sizes
+		self.hidden_size = hidden_size
+		self.output_size = output_size
+		step_input_size = hidden_size + hidden_size
+		self.PAD_TOKEN = PAD_TOKEN if PAD_TOKEN is not None else output_size-2
+		self.SOS_TOKEN = SOS_TOKEN if SOS_TOKEN is not None else output_size-1
+		# layer definitions
+		self.z2h = nn.Linear(noise_size,hidden_size)
+		self.embedding = nn.Embedding(output_size,hidden_size,padding_idx=PAD_TOKEN)
+		self.pos_embedding = PositionalEmbedding(max_seq_len+1,hidden_size)
+		self.s2h = nn.Linear(step_input_size,hidden_size)
+		self.transformer = TransformerDecoder(output_size,num_layers,hidden_size,num_heads,d_ff=d_ff,dropout_prob=0.1)
+		self.h2o = nn.Linear(hidden_size,output_size)
+		self.activation = activation
+		self.last_activation = GumbelSoftmax()
+		self.beam_width = beam_width
+
+	def forward(self,z,num_steps,temperature,x=None):
+		if self.beam_width > 1 and x is None:
+			return self.forward_beam(z=z,num_steps=num_steps,temperature=temperature)
+		else:
+			return self.forward_greedy(z=z,num_steps=num_steps,temperature=temperature,x=x)
+
+	def forward_beam(self,z,num_steps,temperature):
+		predictions = []
+		batch_size = z.size(0)
+		input = z.new_zeros(size=(batch_size*self.beam_width,num_steps),dtype=torch.long,requires_grad=False)
+		input[:,:] = self.PAD_TOKEN
+		previous_output = z.new_zeros(size=(batch_size*self.beam_width,),dtype=torch.long)
+		previous_output[:] = self.SOS_TOKEN # <sos> token
+		z = self.activation(self.z2h(z)).view(batch_size,1,-1).repeat(self.beam_width,num_steps,1)
+		# a table for storing the scores
+		scores = z.new_zeros(size=(batch_size*self.beam_width,self.output_size))
+		# an array of numbers for displacement ie. if batch_size is 2 and beam_width is 3 then this is [0,0,0,3,3,3]. This is used later for indexing
+		beam_displacement = torch.arange(start=0,end=batch_size*self.beam_width,step=self.beam_width,dtype=torch.long,device=z.device).view(-1,1).repeat(1,self.beam_width).view(-1)
+		for i in range(num_steps):
+			input[:,i] = previous_output
+			step_input = self.embedding(input)
+			step_input = self.pos_embedding(step_input)
+			step_input = torch.cat([step_input,z],dim=2) # step_input is of size [batch,seq_len,step_input_size]
+			step_input = self.activation(self.s2h(step_input))
+			mask = create_target_mask(input,self.PAD_TOKEN)
+			out = self.transformer(step_input,mask=mask)
+			out = out[:,i,:]
+			out = self.activation(out)
+			out = self.h2o(out)
+			out = self.last_activation(out,temperature)
+			# compute new scores
+			next_scores = scores + torch.log(out+1e-8)
+			# select top-k scores where k is the beam width
+			score,outputs = next_scores.view(batch_size,-1).topk(self.beam_width,dim=-1)
+			# flatten the output
+			outputs = outputs.view(-1)
+			# get the indices in the original onehot output by finding the module of the vocab size
+			indices = torch.fmod(outputs,self.output_size)
+			# find the index in the beam/batch for the onehot output. Add beam displacement to get correct index
+			beam_indices = torch.div(outputs,self.output_size) + beam_displacement
+			# check if some elements/words are repeated
+			res = torch.eq(previous_output,indices).nonzero()
+			# some elements/words is repeated
+			retries = 0
+			while res.shape[0] > 0:
+				mask = torch.ones(size=(batch_size*self.beam_width,self.output_size),requires_grad=False,device=z.device)
+				# set the mask to be zero when an option is non selectable
+				mask[beam_indices[res],indices[res]] = 0
+				# apply the mask
+				out = out * mask
+				# set the score for the repeated elements to be low
+				next_scores = scores + torch.log(out+1e-8)
+				# select top-k scores where k is the beam width
+				score,outputs = next_scores.view(batch_size,-1).topk(self.beam_width,dim=-1)
+				# flatten the output
+				outputs = outputs.view(-1)
+				# get the indices in the original onehot output by finding the module of the vocab size
+				indices = torch.fmod(outputs,self.output_size)
+				# find the index in the beam/batch for the onehot output. Add beam displacement to get correct index
+				beam_indices = torch.div(outputs,self.output_size) + beam_displacement
+				# check if some elements/words are repeated
+				res = torch.eq(previous_output,indices).nonzero()
+				if retries > 10:
+					break
+				retries += 1
+			# copy the score for each selected candidate
+			scores = score.view(-1,1).repeat(1,self.output_size)
+			# renormalize the output
+			out = out/out.sum(-1).view(-1,1).repeat(1,self.output_size)
+			# append the prediction to output
+			predictions.append(out[beam_indices,:])
+			# detach the output such that we don't backpropagate through timesteps
+			previous_output = indices.detach()
+		output = torch.stack(predictions).transpose(1,0)
+		# initialize an output_mask such that we can filter out sentences
+		output_mask = torch.zeros_like(output)
+		# set the selected sentences output_mask to 1
+		output_mask[scores[:,0].view(batch_size,-1).argmax(dim=-1) + beam_displacement.view(batch_size,-1)[:,0]] = 1
+		# collect the best prediction for each sample in batch
+		output = (output*output_mask).view(batch_size,self.beam_width,num_steps,self.output_size)
+		# sum the beam sentences. Since the sentences that is not selected is zero this doesn't change the actual sentences
+		output = output.sum(1)
+		return output
+
+	def forward_greedy(self,z,num_steps,temperature,x=None):
+		predictions = []
+		batch_size = z.size(0)
+		input = z.new_zeros(size=(batch_size,num_steps),dtype=torch.long,requires_grad=False)
+		input[:,:] = self.PAD_TOKEN
+		previous_output = z.new_zeros(size=(z.size(0),),dtype=torch.long)
+		previous_output[:] = self.SOS_TOKEN # <sos> token
+		z = self.activation(self.z2h(z)).view(batch_size,1,-1).repeat(1,num_steps,1)
+		for i in range(num_steps):
+			input[:,i] = previous_output
+			step_input = self.embedding(input)
+			step_input = self.pos_embedding(step_input)
+			step_input = torch.cat([step_input,z],dim=2) # step_input is of size [batch,seq_len,step_input_size]
+			step_input = self.activation(self.s2h(step_input))
+			mask = create_target_mask(input,self.PAD_TOKEN)
+			out = self.transformer(step_input,mask=mask)
+			out = out[:,i,:]
+			out = self.activation(out)
+			out = self.h2o(out)
+			out = self.last_activation(out,temperature)
+			if x is not None: # teacher forcing
+				previous_output = x[:,i]
+			else: # use prediction as input
+				previous_output = torch.argmax(out,dim=-1)
+				previous_output = previous_output.detach()
+			predictions.append(out)			
+		output = torch.stack(predictions).transpose(1,0)
+		return output
+
+if __name__ == '__main__':
+	batch_size = 4
+	num_steps = 5
+	noise_size = 64
+	output_size = 10
+	z = torch.randn(batch_size,noise_size)
+	model = TransformerGenerator(hidden_size=64,num_heads=4,noise_size=noise_size,output_size=output_size,
+		num_layers=4,max_seq_len=num_steps,d_ff=128,SOS_TOKEN=1,PAD_TOKEN=0,beam_width=1)
+	out = model(z,num_steps,temperature=1.0)
+	print(out.argmax(dim=-1))

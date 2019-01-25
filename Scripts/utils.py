@@ -2,6 +2,7 @@ import torch
 import os
 import errno
 from torch import nn,autograd
+import numpy as np
 
 def tensor_to_list_of_words(batch,num_to_word_vocab):
 	text_translated = []
@@ -73,6 +74,17 @@ def onehot(vec,output_size):
 
 def num_parameters(model):
 	return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+def create_target_mask(target_seq,PAD_TOKEN):
+	target_msk = (target_seq != PAD_TOKEN).unsqueeze(1)
+	size = target_seq.size(1) # get seq_len for matrix
+	nopeak_mask = create_nopeak_mask(size)
+	return target_msk & nopeak_mask
+
+def create_nopeak_mask(seq_len):
+	nopeak_mask = np.uint8(np.triu(np.ones((1,seq_len,seq_len)),k=1))
+	nopeak_mask = torch.from_numpy(nopeak_mask) == 0
+	return nopeak_mask
 
 class RaSGANLoss: 
 	# Relativistic Standard GAN
