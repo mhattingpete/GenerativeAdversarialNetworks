@@ -78,7 +78,7 @@ def num_parameters(model):
 def create_target_mask(target_seq,PAD_TOKEN):
 	target_msk = (target_seq != PAD_TOKEN).unsqueeze(1)
 	size = target_seq.size(1) # get seq_len for matrix
-	nopeak_mask = create_nopeak_mask(size)
+	nopeak_mask = create_nopeak_mask(size).to(target_seq.device)
 	return target_msk & nopeak_mask
 
 def create_nopeak_mask(seq_len):

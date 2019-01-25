@@ -477,7 +477,7 @@ class PositionalEmbedding(nn.Module):
 	def __init__(self,max_seq_len,d_model):
 		super().__init__()
 		self.d_model = d_model
-		# create constant 'pe' matrix with values dependant on 
+		# create constant 'pe' matrix with values dependant on
 		# pos and i
 		pe = torch.zeros(max_seq_len,d_model)
 		for pos in range(max_seq_len):

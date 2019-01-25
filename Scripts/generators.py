@@ -763,7 +763,7 @@ class TransformerGenerator(nn.Module):
 			step_input = self.activation(self.s2h(step_input))
 			mask = create_target_mask(input,self.PAD_TOKEN)
 			out = self.transformer(step_input,mask=mask)
-			out = out[:,i,:]
+			out = torch.index_select(out,dim=1,index=torch.tensor([i],requires_grad=False,device=z.device)).squeeze(1) #out[:,i,:]
 			out = self.activation(out)
 			out = self.h2o(out)
 			out = self.last_activation(out,temperature)
@@ -822,7 +822,7 @@ class TransformerGenerator(nn.Module):
 		return output
 
 	def forward_greedy(self,z,num_steps,temperature,x=None):
-		predictions = []
+		#predictions = []
 		batch_size = z.size(0)
 		input = z.new_zeros(size=(batch_size,num_steps),dtype=torch.long,requires_grad=False)
 		input[:,:] = self.PAD_TOKEN
@@ -837,26 +837,26 @@ class TransformerGenerator(nn.Module):
 			step_input = self.activation(self.s2h(step_input))
 			mask = create_target_mask(input,self.PAD_TOKEN)
 			out = self.transformer(step_input,mask=mask)
-			out = out[:,i,:]
+			#out = torch.index_select(out,dim=1,index=torch.tensor([i],device=z.device)).squeeze(1) #out[:,i,:]
 			out = self.activation(out)
 			out = self.h2o(out)
 			out = self.last_activation(out,temperature)
 			if x is not None: # teacher forcing
 				previous_output = x[:,i]
 			else: # use prediction as input
-				previous_output = torch.argmax(out,dim=-1)
+				previous_output = torch.argmax(out[:,i,:],dim=-1)
 				previous_output = previous_output.detach()
-			predictions.append(out)			
-		output = torch.stack(predictions).transpose(1,0)
+			#predictions.append(out)
+		output = out#torch.stack(predictions).transpose(1,0)
 		return output
 
 if __name__ == '__main__':
-	batch_size = 4
-	num_steps = 5
-	noise_size = 64
-	output_size = 10
+	batch_size = 2
+	num_steps = 3
+	noise_size = 1
+	output_size = 4
 	z = torch.randn(batch_size,noise_size)
-	model = TransformerGenerator(hidden_size=64,num_heads=4,noise_size=noise_size,output_size=output_size,
+	model = TransformerGenerator(hidden_size=8,num_heads=1,noise_size=noise_size,output_size=output_size,
 		num_layers=4,max_seq_len=num_steps,d_ff=128,SOS_TOKEN=1,PAD_TOKEN=0,beam_width=1)
 	out = model(z,num_steps,temperature=1.0)
-	print(out.argmax(dim=-1))
+	#print(out.argmax(dim=-1))
