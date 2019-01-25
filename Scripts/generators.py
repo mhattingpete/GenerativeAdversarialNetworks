@@ -744,7 +744,6 @@ class TransformerGenerator(nn.Module):
 			return self.forward_greedy(z=z,num_steps=num_steps,temperature=temperature,x=x)
 
 	def forward_beam(self,z,num_steps,temperature):
-		predictions = []
 		batch_size = z.size(0)
 		input = z.new_zeros(size=(batch_size*self.beam_width,num_steps),dtype=torch.long,requires_grad=False)
 		input[:,:] = self.PAD_TOKEN
@@ -763,7 +762,7 @@ class TransformerGenerator(nn.Module):
 			step_input = self.activation(self.s2h(step_input))
 			mask = create_target_mask(input,self.PAD_TOKEN)
 			out = self.transformer(step_input,mask=mask)
-			out = torch.index_select(out,dim=1,index=torch.tensor([i],requires_grad=False,device=z.device)).squeeze(1) #out[:,i,:]
+			#out = torch.index_select(out,dim=1,index=torch.tensor([i],requires_grad=False,device=z.device)).squeeze(1) # out[:,i,:]
 			out = self.activation(out)
 			out = self.h2o(out)
 			out = self.last_activation(out,temperature)
@@ -807,7 +806,7 @@ class TransformerGenerator(nn.Module):
 			# renormalize the output
 			out = out/out.sum(-1).view(-1,1).repeat(1,self.output_size)
 			# append the prediction to output
-			predictions.append(out[beam_indices,:])
+			#predictions.append(out[beam_indices,:])
 			# detach the output such that we don't backpropagate through timesteps
 			previous_output = indices.detach()
 		output = torch.stack(predictions).transpose(1,0)
@@ -822,7 +821,6 @@ class TransformerGenerator(nn.Module):
 		return output
 
 	def forward_greedy(self,z,num_steps,temperature,x=None):
-		#predictions = []
 		batch_size = z.size(0)
 		input = z.new_zeros(size=(batch_size,num_steps),dtype=torch.long,requires_grad=False)
 		input[:,:] = self.PAD_TOKEN
@@ -837,7 +835,7 @@ class TransformerGenerator(nn.Module):
 			step_input = self.activation(self.s2h(step_input))
 			mask = create_target_mask(input,self.PAD_TOKEN)
 			out = self.transformer(step_input,mask=mask)
-			#out = torch.index_select(out,dim=1,index=torch.tensor([i],device=z.device)).squeeze(1) #out[:,i,:]
+			#out = torch.index_select(out,dim=1,index=torch.tensor([i],device=z.device)).squeeze(1) # out[:,i,:]
 			out = self.activation(out)
 			out = self.h2o(out)
 			out = self.last_activation(out,temperature)
@@ -846,8 +844,7 @@ class TransformerGenerator(nn.Module):
 			else: # use prediction as input
 				previous_output = torch.argmax(out[:,i,:],dim=-1)
 				previous_output = previous_output.detach()
-			#predictions.append(out)
-		output = out#torch.stack(predictions).transpose(1,0)
+		output = out
 		return output
 
 if __name__ == '__main__':
