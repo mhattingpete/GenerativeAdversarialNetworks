@@ -393,8 +393,8 @@ class ScaledDotProductAttention(nn.Module):
 	def forward(self,q,k,v,mask=None):
 		attn = torch.matmul(q/self.temperature,k.permute(0,1,3,2))
 		if mask is not None:
-			mask = mask.unsqueeze(1).repeat(1,attn.shape[1],1,1)
-			attn = attn.masked_fill(mask,-1e20)
+			mask = mask.unsqueeze(1)
+			attn = attn.masked_fill(mask,-np.inf)
 		attn = self.softmax(attn)
 		output = torch.matmul(attn,v)
 		return output,attn
@@ -407,8 +407,6 @@ class MultiheadAttention(nn.Module):
 	def __init__(self,num_heads,d_model,d_k,d_v,dropout_prob=0.1):
 		super().__init__()
 		self.num_heads = num_heads
-		#self.d_k = d_k
-		#self.d_v = d_v
 		self.q_layer = nn.Linear(d_model,num_heads*d_k,bias=False)
 		self.k_layer = nn.Linear(d_model,num_heads*d_k,bias=False)
 		self.v_layer = nn.Linear(d_model,num_heads*d_v,bias=False)
@@ -461,16 +459,22 @@ class TransformerDecoderLayer(nn.Module):
 		self.posff_layer = PositionwiseFeedForward(d_model=d_model,d_ff=d_ff,dropout_prob=dropout_prob)
 		self.layernorm3 = nn.LayerNorm(d_model)
 
-	def forward(self,x,mask=None):
+	def forward(self,x,non_pad_mask=None,attn_mask=None):
 		res = x
-		x,_ = self.mask_attention(x,x,x,mask=mask)
+		x,_ = self.mask_attention(x,x,x,mask=attn_mask)
 		x = self.layernorm1(x+res)
+		if non_pad_mask is not None:
+			x *= non_pad_mask
 		res = x
 		x,_ = self.attention(x,x,x)
 		x = self.layernorm2(x+res)
+		if non_pad_mask is not None:
+			x *= non_pad_mask
 		res = x
 		x = self.posff_layer(x)
 		x = self.layernorm3(x+res)
+		if non_pad_mask is not None:
+			x *= non_pad_mask
 		return x
 
 class PositionalEmbedding(nn.Module):
@@ -500,7 +504,7 @@ class TransformerDecoder(nn.Module):
 		layers = [TransformerDecoderLayer(d_model=d_model,num_heads=num_heads,d_ff=d_ff,dropout_prob=dropout_prob) for _ in range(num_layers)]
 		self.layers = nn.ModuleList(layers)
 
-	def forward(self,x,mask=None):
+	def forward(self,x,non_pad_mask=None,attn_mask=None):
 		for l in self.layers:
-			x = l(x,mask=mask)
+			x = l(x,non_pad_mask=non_pad_mask,attn_mask=attn_mask)
 		return x

@@ -75,16 +75,26 @@ def onehot(vec,output_size):
 def num_parameters(model):
 	return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
-def create_target_mask(target_seq,PAD_TOKEN):
-	target_msk = (target_seq != PAD_TOKEN).unsqueeze(1)
-	size = target_seq.size(1) # get seq_len for matrix
-	nopeak_mask = create_nopeak_mask(size).to(target_seq.device)
-	return target_msk & nopeak_mask
+def get_non_pad_mask(seq,PAD_TOKEN):
+	return seq.ne(PAD_TOKEN).type(torch.float).unsqueeze(-1)
 
-def create_nopeak_mask(seq_len):
-	nopeak_mask = np.uint8(np.triu(np.ones((1,seq_len,seq_len)),k=1))
-	nopeak_mask = torch.from_numpy(nopeak_mask) == 0
-	return nopeak_mask
+def get_attn_key_pad_mask(seq,PAD_TOKEN):
+	"""
+	For masking out padding part of sequence
+	"""
+	seq_len = seq.size(1)
+	padding_mask = seq.eq(PAD_TOKEN)
+	padding_mask = padding_mask.unsqueeze(1).expand(-1,seq_len,-1) # size [batch_size x seq_len x seq_len]
+	return padding_mask
+
+def get_subsequent_mask(seq):
+	"""
+	For preventing lookahead
+	"""
+	batch_size,seq_len = seq.size()
+	subsequent_mask = torch.triu(torch.ones((seq_len,seq_len),device=seq.device,dtype=torch.uint8),diagonal=1)
+	subsequent_mask = subsequent_mask.unsqueeze(0).expand(batch_size,-1,-1) # size [batch_size x seq_len x seq_len]
+	return subsequent_mask
 
 class RaSGANLoss: 
 	# Relativistic Standard GAN

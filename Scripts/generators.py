@@ -5,7 +5,7 @@ import torch
 # local imports
 from layers import MultiLayerPerceptron,PixelwiseNormalization,Conv2dEqualized,SelfAttention,GumbelSoftmax,RelationalRNNCell,MemoryCell
 from layers import PositionalEmbedding,TransformerDecoder
-from utils import create_target_mask
+from utils import get_attn_key_pad_mask,get_subsequent_mask,get_non_pad_mask
 
 #######################################
 #####    Unconditional models     #####
@@ -744,25 +744,30 @@ class TransformerGenerator(nn.Module):
 			return self.forward_greedy(z=z,num_steps=num_steps,temperature=temperature,x=x)
 
 	def forward_beam(self,z,num_steps,temperature):
+		predictions = []
 		batch_size = z.size(0)
-		input = z.new_zeros(size=(batch_size*self.beam_width,num_steps),dtype=torch.long,requires_grad=False)
-		input[:,:] = self.PAD_TOKEN
+		next_input = z.new_zeros(size=(batch_size*self.beam_width,num_steps),dtype=torch.long,requires_grad=False)
+		next_input[:,:] = self.PAD_TOKEN
+		next_input[:,0] = self.SOS_TOKEN # <sos> token
+		z = self.activation(self.z2h(z)).view(batch_size,1,-1).repeat(self.beam_width,num_steps,1)
 		previous_output = z.new_zeros(size=(batch_size*self.beam_width,),dtype=torch.long)
 		previous_output[:] = self.SOS_TOKEN # <sos> token
-		z = self.activation(self.z2h(z)).view(batch_size,1,-1).repeat(self.beam_width,num_steps,1)
 		# a table for storing the scores
 		scores = z.new_zeros(size=(batch_size*self.beam_width,self.output_size))
 		# an array of numbers for displacement ie. if batch_size is 2 and beam_width is 3 then this is [0,0,0,3,3,3]. This is used later for indexing
 		beam_displacement = torch.arange(start=0,end=batch_size*self.beam_width,step=self.beam_width,dtype=torch.long,device=z.device).view(-1,1).repeat(1,self.beam_width).view(-1)
 		for i in range(num_steps):
-			input[:,i] = previous_output
+			input = next_input
 			step_input = self.embedding(input)
 			step_input = self.pos_embedding(step_input)
 			step_input = torch.cat([step_input,z],dim=2) # step_input is of size [batch,seq_len,step_input_size]
 			step_input = self.activation(self.s2h(step_input))
-			mask = create_target_mask(input,self.PAD_TOKEN)
-			out = self.transformer(step_input,mask=mask)
-			#out = torch.index_select(out,dim=1,index=torch.tensor([i],requires_grad=False,device=z.device)).squeeze(1) # out[:,i,:]
+			non_pad_mask = get_non_pad_mask(input,self.PAD_TOKEN)
+			slf_attn_mask_subseq = get_subsequent_mask(input)
+			slf_attn_mask_keypad = get_attn_key_pad_mask(input,self.PAD_TOKEN)
+			attn_mask = (slf_attn_mask_keypad + slf_attn_mask_subseq).gt(0)
+			out = self.transformer(step_input,non_pad_mask=non_pad_mask,attn_mask=attn_mask)
+			out = out[:,i,:]
 			out = self.activation(out)
 			out = self.h2o(out)
 			out = self.last_activation(out,temperature)
@@ -806,9 +811,10 @@ class TransformerGenerator(nn.Module):
 			# renormalize the output
 			out = out/out.sum(-1).view(-1,1).repeat(1,self.output_size)
 			# append the prediction to output
-			#predictions.append(out[beam_indices,:])
+			predictions.append(out[beam_indices,:])
 			# detach the output such that we don't backpropagate through timesteps
 			previous_output = indices.detach()
+			next_input = torch.cat([input[:,:i+1],previous_output.view(-1,1),input[:,i+2:]],dim=1)
 		output = torch.stack(predictions).transpose(1,0)
 		# initialize an output_mask such that we can filter out sentences
 		output_mask = torch.zeros_like(output)
@@ -821,30 +827,35 @@ class TransformerGenerator(nn.Module):
 		return output
 
 	def forward_greedy(self,z,num_steps,temperature,x=None):
+		predictions = []
 		batch_size = z.size(0)
-		input = z.new_zeros(size=(batch_size,num_steps),dtype=torch.long,requires_grad=False)
-		input[:,:] = self.PAD_TOKEN
-		previous_output = z.new_zeros(size=(z.size(0),),dtype=torch.long)
-		previous_output[:] = self.SOS_TOKEN # <sos> token
+		next_input = z.new_zeros(size=(batch_size,num_steps),dtype=torch.long,requires_grad=False)
+		next_input[:,:] = self.PAD_TOKEN
+		next_input[:,0] = self.SOS_TOKEN # <sos> token
 		z = self.activation(self.z2h(z)).view(batch_size,1,-1).repeat(1,num_steps,1)
 		for i in range(num_steps):
-			input[:,i] = previous_output
+			input = next_input
 			step_input = self.embedding(input)
 			step_input = self.pos_embedding(step_input)
 			step_input = torch.cat([step_input,z],dim=2) # step_input is of size [batch,seq_len,step_input_size]
 			step_input = self.activation(self.s2h(step_input))
-			mask = create_target_mask(input,self.PAD_TOKEN)
-			out = self.transformer(step_input,mask=mask)
-			#out = torch.index_select(out,dim=1,index=torch.tensor([i],device=z.device)).squeeze(1) # out[:,i,:]
+			non_pad_mask = get_non_pad_mask(input,self.PAD_TOKEN)
+			slf_attn_mask_subseq = get_subsequent_mask(input)
+			slf_attn_mask_keypad = get_attn_key_pad_mask(input,self.PAD_TOKEN)
+			attn_mask = (slf_attn_mask_keypad + slf_attn_mask_subseq).gt(0)
+			out = self.transformer(step_input,non_pad_mask=non_pad_mask,attn_mask=attn_mask)
+			out = out[:,i,:]
 			out = self.activation(out)
 			out = self.h2o(out)
 			out = self.last_activation(out,temperature)
 			if x is not None: # teacher forcing
 				previous_output = x[:,i]
 			else: # use prediction as input
-				previous_output = torch.argmax(out[:,i,:],dim=-1)
+				previous_output = torch.argmax(out,dim=-1)
 				previous_output = previous_output.detach()
-		output = out
+			next_input = torch.cat([input[:,:i+1],previous_output.view(-1,1),input[:,i+2:]],dim=1)
+			predictions.append(out)			
+		output = torch.stack(predictions).transpose(1,0)
 		return output
 
 if __name__ == '__main__':
@@ -853,7 +864,17 @@ if __name__ == '__main__':
 	noise_size = 1
 	output_size = 4
 	z = torch.randn(batch_size,noise_size)
+	real_data = torch.randint(low=0,high=output_size,size=(batch_size,num_steps),dtype=torch.long)
+	loss_fun = nn.NLLLoss()
 	model = TransformerGenerator(hidden_size=8,num_heads=1,noise_size=noise_size,output_size=output_size,
-		num_layers=4,max_seq_len=num_steps,d_ff=128,SOS_TOKEN=1,PAD_TOKEN=0,beam_width=1)
-	out = model(z,num_steps,temperature=1.0)
-	#print(out.argmax(dim=-1))
+		num_layers=4,max_seq_len=num_steps,d_ff=128,SOS_TOKEN=1,PAD_TOKEN=0,beam_width=5)
+	#model = GumbelRNNGenerator(hidden_size=8,noise_size=noise_size,output_size=output_size,
+	#	SOS_TOKEN=1,beam_width=5)
+	fake_data = model(z,num_steps,temperature=1.0)
+	loss = 0
+	fake_data = torch.log(fake_data+1e-8)
+	for i in range(fake_data.size(1)):
+		loss += loss_fun(fake_data[:,i,:],real_data[:,i])
+	loss /= fake_data.size(1)
+	loss.backward()
+	print(fake_data.argmax(dim=-1))
