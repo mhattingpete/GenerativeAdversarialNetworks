@@ -126,9 +126,11 @@ use_g_lr_scheduler = "lr_scheduler" in config["model_config"]["generator"]
 use_d_lr_scheduler = "lr_scheduler" in config["model_config"]["discriminator"]
 
 if use_g_lr_scheduler:
-	g_lr_scheduler = getattr(optim.lr_scheduler,config["model_config"]["generator"]["lr_scheduler"]["name"])(g_pre_optimizer,
-		mode=config["model_config"]["generator"]["lr_scheduler"]["mode"],factor=config["model_config"]["generator"]["lr_scheduler"]["factor"],
-		patience=config["model_config"]["generator"]["lr_scheduler"]["patience"],verbose=True)
+	pre_g_lr_scheduler = getattr(optim.lr_scheduler,config["model_config"]["generator"]["pre_lr_scheduler"]["name"])(g_pre_optimizer,
+		mode=config["model_config"]["generator"]["pre_lr_scheduler"]["mode"],factor=config["model_config"]["generator"]["pre_lr_scheduler"]["factor"],
+		patience=config["model_config"]["generator"]["pre_lr_scheduler"]["patience"],verbose=True)
+g_lr_scheduler = optim.lr_scheduler.ExponentialLR(g_optimizer,config["model_config"]["generator"]["lr_scheduler"]["factor"])
+d_lr_scheduler = optim.lr_scheduler.ExponentialLR(d_optimizer,config["model_config"]["discriminator"]["lr_scheduler"]["factor"])
 
 # losses
 supported_losses = ["RaSGAN","WGAN-GP"]
@@ -264,7 +266,7 @@ for ep in range(epochs_pretrain):
 			pretrain_dis.add_scalar("pretrain epoch",ep,pretrain_step)
 			pretrain_dis.add_scalar("pretrain_g_error",pretrain_g_error.item(),pretrain_step)
 	if use_g_lr_scheduler:
-		g_lr_scheduler.step(torch.stack(batch_error).mean())
+		pre_g_lr_scheduler.step(torch.stack(batch_error).mean())
 	if ep % 10 == 0:
 		test_samples = generator(z=test_noise,num_steps=num_steps,temperature=pretrain_temperature)
 		test_samples_vals = torch.argmax(test_samples,dim=2)
@@ -278,6 +280,8 @@ text_log = open(os.path.join(summary_path,"log.txt"),"a")
 while epoch < num_epochs:
 	train_iter = iter(train_data)
 	temperature = max_temperature**((epoch+1)/num_epochs)
+	g_lr_scheduler.step()
+	d_lr_scheduler.step()
 	for n_batch,batch in enumerate(train_iter):
 		real_data = batch.text.to(device)
 		N = real_data.size(0)
