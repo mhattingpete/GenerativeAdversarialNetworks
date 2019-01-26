@@ -1,8 +1,8 @@
 {
-	"CUDA_VISIBLE_DEVICES":"5",
+	"CUDA_VISIBLE_DEVICES":"6",
 	"train_config":{
-		"num_epochs":1,
-		"epochs_pretrain":1,
+		"num_epochs":200,
+		"epochs_pretrain":100,
 		"max_temperature":100,
 		"pretrain_temperature":1,
 		"gen_steps":1,
@@ -11,23 +11,26 @@
 	},
 	"model_config":{
 		"save_name":"Transformer-GAN",
-		"batch_size":128,
+		"batch_size":32,
 		"noise_size":128,
 		"generator":{
 			"name":"TransformerGenerator",
-			"hidden_size":256,
-			"num_heads":4,
-			"num_layers":6,
-			"d_ff":512,
+			"hidden_size":128,
+			"num_heads":8,
+			"num_layers":4,
+			"d_ff":256,
 			"beam_width":5,
 			"optimizer":"Adam",
 			"pre_lr":1e-2,
 			"lr":1e-4,
-			"lr_scheduler":{
+			"pre_lr_scheduler":{
 				"name":"ReduceLROnPlateau",
 				"mode":"min",
 				"factor":0.5,
 				"patience":2
+			},
+			"lr_scheduler":{
+				"factor":0.8
 			}
 		},
 		"discriminator": {
@@ -36,7 +39,10 @@
 			"sim_size":4,
 			"similarity":"CosineSimilarity",
 			"optimizer":"Adam",
-			"lr":1e-4
+			"lr":1e-4,
+			"lr_scheduler":{
+				"factor":0.8
+			}
 		}
 	},
 	"dataset_config":{

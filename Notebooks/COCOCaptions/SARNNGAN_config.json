@@ -1,5 +1,5 @@
 {
-	"CUDA_VISIBLE_DEVICES":"1",
+	"CUDA_VISIBLE_DEVICES":"4",
 	"train_config":{
 		"num_epochs":200,
 		"epochs_pretrain":100,
@@ -7,7 +7,7 @@
 		"pretrain_temperature":1,
 		"gen_steps":1,
 		"gen_train_freq":5,
-		"loss_fun":"WGAN-GP"
+		"loss_fun":"RaSGAN"
 	},
 	"model_config":{
 		"save_name":"SA-RNN-GAN",
@@ -15,23 +15,29 @@
 		"noise_size":128,
 		"generator":{
 			"name":"GumbelSARNNGenerator",
-			"hidden_size":256,
+			"hidden_size":512,
 			"beam_width":5,
 			"optimizer":"Adam",
 			"pre_lr":1e-2,
 			"lr":1e-4,
-			"lr_scheduler":{
+			"pre_lr_scheduler":{
 				"name":"ReduceLROnPlateau",
 				"mode":"min",
 				"factor":0.5,
 				"patience":2
+			},
+			"lr_scheduler":{
+				"factor":0.8
 			}
 		},
 		"discriminator": {
 			"name":"GumbelSARNNDiscriminator",
 			"hidden_size":256,
 			"optimizer":"Adam",
-			"lr":1e-4
+			"lr":1e-4,
+			"lr_scheduler":{
+				"factor":0.8
+			}
 		}
 	},
 	"dataset_config":{

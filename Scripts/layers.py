@@ -489,12 +489,13 @@ class PositionalEmbedding(nn.Module):
 				pe[pos,i] = math.sin(pos/(10000**((2*i)/d_model)))
 				pe[pos,i+1] = math.cos(pos/(10000**((2*(i+1))/d_model)))
 		pe = pe.unsqueeze(0)
-		self.register_buffer("pe",pe)
+		#self.register_buffer("pe",pe)
+		self.pe = nn.Parameter(pe,requires_grad=False)
 
 	def forward(self,x):
 		x = x + math.sqrt(self.d_model)
 		seq_len = x.size(1)
-		x = x + torch.tensor(self.pe[:,:seq_len],requires_grad=False,device=x.device)
+		x = x + self.pe[:,:seq_len]
 		return x
 
 class TransformerDecoder(nn.Module):

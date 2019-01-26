@@ -484,8 +484,6 @@ class GumbelRelRNNGenerator(nn.Module):
 		beam_displacement = torch.arange(start=0,end=batch_size*self.beam_width,step=self.beam_width,dtype=torch.long,device=z.device).view(-1,1).repeat(1,self.beam_width).view(-1)
 		for i in range(num_steps):
 			input = self.activation(self.embedding(previous_output))
-			if x is not None:
-				input = self.input_dropout(input)
 			step_input = torch.cat([input,z],dim=1)
 			step_input = self.batchnorm2(step_input)
 			memory = self.relRNN(step_input,memory)
@@ -558,7 +556,7 @@ class GumbelRelRNNGenerator(nn.Module):
 			input = self.activation(self.embedding(previous_output))
 			if x is not None:
 				input = self.input_dropout(input)
-			step_input = torch.cat([previous_output,z],dim=1)
+			step_input = torch.cat([input,z],dim=1)
 			step_input = self.batchnorm2(step_input)
 			memory = self.relRNN(step_input,memory)
 			out = self.m2o(memory.view(memory.size(0),-1))
@@ -626,7 +624,7 @@ class MemoryGenerator(nn.Module):
 			step_input = self.batchnorm2(step_input)
 			step_mem = memory[:,i,:] # step_mem is of size [batch,step_input_size]
 			out,hx,hm = self.memcell(step_input,step_mem,hx=hx,hm=hm)
-			out = self.activation(h)
+			out = self.activation(out)
 			out = self.batchnorm3(out)
 			out = self.h2o(out)
 			out = self.last_activation(out,temperature)
