@@ -411,21 +411,16 @@ class MultiheadAttention(nn.Module):
 		self.k_layer = nn.Linear(d_model,num_heads*d_k,bias=False)
 		self.v_layer = nn.Linear(d_model,num_heads*d_v,bias=False)
 		self.attention = ScaledDotProductAttention(temperature=math.sqrt(num_heads*d_k))
-		self.layer_norm = nn.LayerNorm(d_model)
 		self.out_layer = nn.Linear(num_heads*d_v,d_model,bias=False)
-		self.dropout = nn.Dropout(dropout_prob)
 
 	def forward(self,q,k,v,mask=None):
-		# save input for residual
-		res = q
 		# apply the layers for the inputs
 		q = self._split_heads(self.q_layer(q))
 		k = self._split_heads(self.k_layer(k))
 		v = self._split_heads(self.v_layer(v))
 		out,attn = self.attention(q,k,v,mask=mask)
 		out = self._merge_heads(out)
-		out = self.dropout(self.out_layer(out)+res)
-		out = self.layer_norm(out)
+		out = self.out_layer(out)
 		return out,attn
 
 	def _split_heads(self,x):

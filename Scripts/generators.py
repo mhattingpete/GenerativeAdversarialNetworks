@@ -1,6 +1,7 @@
 # global imports
 from torch import nn
 import torch
+import gc
 
 # local imports
 from layers import MultiLayerPerceptron,PixelwiseNormalization,Conv2dEqualized,SelfAttention,GumbelSoftmax,RelationalRNNCell,MemoryCell
@@ -474,7 +475,7 @@ class GumbelRelRNNGenerator(nn.Module):
 		z = self.batchnorm1(self.activation(self.z2m(z))).repeat(self.beam_width,1)
 		h = z # initialize the hidden state
 		# detach memory such that we don't backprop through the whole dataset
-		memory = self.initMemory(batch_size).to(z.device)
+		memory = self.initMemory(batch_size*self.beam_width).to(z.device)
 		memory = memory.detach()
 		previous_output = z.new_zeros(size=(batch_size*self.beam_width,),dtype=torch.long)
 		previous_output[:] = self.SOS_TOKEN # <sos> token
@@ -711,7 +712,7 @@ class MemoryGenerator(nn.Module):
 			else: # use prediction as input
 				previous_output = torch.argmax(out,dim=-1)
 				previous_output = previous_output.detach()
-			predictions.append(out)			
+			predictions.append(out)
 		output = torch.stack(predictions).transpose(1,0)
 		return output
 
@@ -755,7 +756,7 @@ class TransformerGenerator(nn.Module):
 		# an array of numbers for displacement ie. if batch_size is 2 and beam_width is 3 then this is [0,0,0,3,3,3]. This is used later for indexing
 		beam_displacement = torch.arange(start=0,end=batch_size*self.beam_width,step=self.beam_width,dtype=torch.long,device=z.device).view(-1,1).repeat(1,self.beam_width).view(-1)
 		for i in range(num_steps):
-			input = next_input
+			input = next_input.detach()
 			step_input = self.embedding(input)
 			step_input = self.pos_embedding(step_input)
 			step_input = torch.cat([step_input,z],dim=2) # step_input is of size [batch,seq_len,step_input_size]
@@ -851,8 +852,8 @@ class TransformerGenerator(nn.Module):
 			else: # use prediction as input
 				previous_output = torch.argmax(out,dim=-1)
 				previous_output = previous_output.detach()
-			next_input = torch.cat([input[:,:i+1],previous_output.view(-1,1),input[:,i+2:]],dim=1)
-			predictions.append(out)			
+			next_input = torch.cat([input[:,:i+1],previous_output.view(-1,1),input[:,i+2:]],dim=1).detach()
+			predictions.append(out)
 		output = torch.stack(predictions).transpose(1,0)
 		return output
 
