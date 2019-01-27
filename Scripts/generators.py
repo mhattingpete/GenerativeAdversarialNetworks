@@ -7,6 +7,7 @@ import gc
 from layers import MultiLayerPerceptron,PixelwiseNormalization,Conv2dEqualized,SelfAttention,GumbelSoftmax,RelationalRNNCell,MemoryCell
 from layers import PositionalEmbedding,TransformerDecoder
 from utils import get_attn_key_pad_mask,get_subsequent_mask,get_non_pad_mask
+from load_glove import create_emb_layer
 
 #######################################
 #####    Unconditional models     #####
@@ -190,7 +191,7 @@ class CondConvGenerator(nn.Module):
 #######################################
 
 class GumbelRNNGenerator(nn.Module):
-	def __init__(self,hidden_size,noise_size,output_size,activation=nn.LeakyReLU(0.2),SOS_TOKEN=None,beam_width=1):
+	def __init__(self,hidden_size,noise_size,output_size,vocab=None,activation=nn.LeakyReLU(0.2),SOS_TOKEN=None,beam_width=1):
 		super().__init__()
 		# internal variable sizes
 		self.hidden_size = hidden_size
@@ -199,7 +200,11 @@ class GumbelRNNGenerator(nn.Module):
 		# layer definitions
 		self.z2h = nn.Linear(noise_size,hidden_size)
 		self.batchnorm1 = nn.BatchNorm1d(hidden_size)
-		self.embedding = nn.Embedding(output_size,hidden_size)
+		if vocab is not None:
+			emb_layer,num_embeddings,embedding_dim = create_emb_layer(vocab)
+			self.embedding = nn.Sequential(emb_layer,nn.Linear(embedding_dim,hidden_size)) # output shape is [*,embedding_dim] where * is the input shape
+		else:
+			self.embedding = nn.Embedding(output_size,hidden_size)
 		self.batchnorm2 = nn.BatchNorm1d(step_input_size)
 		self.gru = nn.GRUCell(step_input_size,hidden_size)
 		self.h2o = nn.Linear(hidden_size,output_size)
@@ -314,7 +319,7 @@ class GumbelRNNGenerator(nn.Module):
 		return output
 
 class GumbelSARNNGenerator(nn.Module):
-	def __init__(self,hidden_size,noise_size,output_size,activation=nn.LeakyReLU(0.2),SOS_TOKEN=None,beam_width=1):
+	def __init__(self,hidden_size,noise_size,output_size,vocab=None,activation=nn.LeakyReLU(0.2),SOS_TOKEN=None,beam_width=1):
 		super().__init__()
 		# internal variable sizes
 		self.output_size = output_size
@@ -325,7 +330,11 @@ class GumbelSARNNGenerator(nn.Module):
 		self.batchnorm1 = nn.BatchNorm1d(hidden_size)
 		self.attention = SelfAttention(hidden_size,layer_type="linear")
 		self.batchnorm2 = nn.BatchNorm1d(hidden_size)
-		self.embedding = nn.Embedding(output_size,hidden_size)
+		if vocab is not None:
+			emb_layer,num_embeddings,embedding_dim = create_emb_layer(vocab)
+			self.embedding = nn.Sequential(emb_layer,nn.Linear(embedding_dim,hidden_size)) # output shape is [*,embedding_dim] where * is the input shape
+		else:
+			self.embedding = nn.Embedding(output_size,hidden_size)
 		self.batchnorm3 = nn.BatchNorm1d(step_input_size)
 		self.gru = nn.GRUCell(step_input_size,hidden_size)
 		self.h2o = nn.Linear(hidden_size,output_size)
