@@ -121,9 +121,9 @@ else:
 	hidden_size=config["model_config"]["discriminator"]["hidden_size"],output_size=1).to(device)
 
 # otpimizers
-g_pre_optimizer = getattr(optim,config["model_config"]["generator"]["optimizer"])(generator.parameters(),lr=g_pre_lr)
-g_optimizer = getattr(optim,config["model_config"]["generator"]["optimizer"])(generator.parameters(),lr=g_lr)
-d_optimizer = getattr(optim,config["model_config"]["discriminator"]["optimizer"])(discriminator.parameters(),lr=d_lr)
+g_pre_optimizer = getattr(optim,config["model_config"]["generator"]["optimizer"])(generator.parameters(),lr=g_pre_lr,amsgrad=True)
+g_optimizer = getattr(optim,config["model_config"]["generator"]["optimizer"])(generator.parameters(),lr=g_lr,amsgrad=True)
+d_optimizer = getattr(optim,config["model_config"]["discriminator"]["optimizer"])(discriminator.parameters(),lr=d_lr,weight_decay=1e-4,amsgrad=True)
 use_g_lr_scheduler = "lr_scheduler" in config["model_config"]["generator"]
 use_d_lr_scheduler = "lr_scheduler" in config["model_config"]["discriminator"]
 
@@ -225,6 +225,7 @@ def train_discriminator(discriminator,real_data_onehot,fake_data,optimizer):
 		else: # WGAN-GP
 			loss = loss_fun.discriminator_loss(pred_real,pred_fake,real_data_onehot,fake_data)
 	loss.backward()
+	nn.utils.clip_grad_norm_(discriminator.parameters(),max_norm=100,norm_type=2)
 	# 1.3 Update weights with gradients
 	optimizer.step()
 	return loss

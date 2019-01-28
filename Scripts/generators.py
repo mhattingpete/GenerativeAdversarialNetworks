@@ -198,16 +198,16 @@ class GumbelRNNGenerator(nn.Module):
 		self.output_size = output_size
 		step_input_size = hidden_size + hidden_size
 		# layer definitions
-		self.z2h = nn.Linear(noise_size,hidden_size)
+		self.z2h = nn.utils.spectral_norm(nn.Linear(noise_size,hidden_size))
 		self.batchnorm1 = nn.BatchNorm1d(hidden_size)
 		if vocab is not None:
 			emb_layer,num_embeddings,embedding_dim = create_emb_layer(vocab)
-			self.embedding = nn.Sequential(emb_layer,nn.Linear(embedding_dim,hidden_size)) # output shape is [*,embedding_dim] where * is the input shape
+			self.embedding = nn.Sequential(emb_layer,nn.utils.spectral_norm(nn.Linear(embedding_dim,hidden_size))) # output shape is [*,embedding_dim] where * is the input shape
 		else:
 			self.embedding = nn.Embedding(output_size,hidden_size)
 		self.batchnorm2 = nn.BatchNorm1d(step_input_size)
-		self.gru = nn.GRUCell(step_input_size,hidden_size)
-		self.h2o = nn.Linear(hidden_size,output_size)
+		self.gru = nn.utils.spectral_norm(nn.GRUCell(step_input_size,hidden_size))
+		self.h2o = nn.utils.spectral_norm(nn.Linear(hidden_size,output_size))
 		self.batchnorm3 = nn.BatchNorm1d(hidden_size)
 		self.activation = activation
 		self.last_activation = GumbelSoftmax()
@@ -326,18 +326,18 @@ class GumbelSARNNGenerator(nn.Module):
 		self.hidden_size = hidden_size
 		step_input_size = hidden_size + hidden_size
 		# layer definitions
-		self.z2h = nn.Linear(noise_size,hidden_size)
+		self.z2h = nn.utils.spectral_norm(nn.Linear(noise_size,hidden_size))
 		self.batchnorm1 = nn.BatchNorm1d(hidden_size)
 		self.attention = SelfAttention(hidden_size,layer_type="linear")
 		self.batchnorm2 = nn.BatchNorm1d(hidden_size)
 		if vocab is not None:
 			emb_layer,num_embeddings,embedding_dim = create_emb_layer(vocab)
-			self.embedding = nn.Sequential(emb_layer,nn.Linear(embedding_dim,hidden_size)) # output shape is [*,embedding_dim] where * is the input shape
+			self.embedding = nn.Sequential(emb_layer,nn.utils.spectral_norm(nn.Linear(embedding_dim,hidden_size))) # output shape is [*,embedding_dim] where * is the input shape
 		else:
 			self.embedding = nn.Embedding(output_size,hidden_size)
 		self.batchnorm3 = nn.BatchNorm1d(step_input_size)
-		self.gru = nn.GRUCell(step_input_size,hidden_size)
-		self.h2o = nn.Linear(hidden_size,output_size)
+		self.gru = nn.utils.spectral_norm(nn.GRUCell(step_input_size,hidden_size))
+		self.h2o = nn.utils.spectral_norm(nn.Linear(hidden_size,output_size))
 		self.batchnorm4 = nn.BatchNorm1d(hidden_size)
 		self.activation = activation
 		self.last_activation = GumbelSoftmax()
@@ -461,12 +461,12 @@ class GumbelRelRNNGenerator(nn.Module):
 		self.output_size = output_size
 		# layer definitions
 		self.input_dropout = nn.Dropout(p=dropout_prob)
-		self.z2m = nn.Linear(noise_size,hidden_size)
+		self.z2m = nn.utils.spectral_norm(nn.Linear(noise_size,hidden_size))
 		self.batchnorm1 = nn.BatchNorm1d(hidden_size)
 		self.embedding = nn.Embedding(output_size,hidden_size)
 		self.batchnorm2 = nn.BatchNorm1d(step_input_size)
 		self.relRNN = RelationalRNNCell(step_input_size,mem_slots=mem_slots,head_size=head_size,num_heads=num_heads,gate_type=gate_type,activation=activation)
-		self.m2o = nn.Linear(mem_slots*hidden_size,output_size)
+		self.m2o = nn.utils.spectral_norm(nn.Linear(mem_slots*hidden_size,output_size))
 		self.activation = activation
 		self.last_activation = GumbelSoftmax()
 		self.SOS_TOKEN = SOS_TOKEN if SOS_TOKEN is not None else output_size-1
@@ -591,13 +591,13 @@ class MemoryGenerator(nn.Module):
 		step_input_size = hidden_size + hidden_size
 		self.output_size = output_size
 		# layer definitions
-		self.z2h = nn.Linear(noise_size,hidden_size)
+		self.z2h = nn.utils.spectral_norm(nn.Linear(noise_size,hidden_size))
 		self.batchnorm1 = nn.BatchNorm1d(hidden_size)
 		self.embedding = nn.Embedding(output_size,hidden_size)
 		self.batchnorm2 = nn.BatchNorm1d(step_input_size)
 		self.memcell = MemoryCell(step_input_size,hidden_size,sim_size=sim_size,similarity=similarity)
 		self.batchnorm3 = nn.BatchNorm1d(hidden_size)
-		self.h2o = nn.Linear(hidden_size,output_size)
+		self.h2o = nn.utils.spectral_norm(nn.Linear(hidden_size,output_size))
 		self.activation = activation
 		self.SOS_TOKEN = SOS_TOKEN if SOS_TOKEN is not None else output_size-1
 		self.max_seq_len = max_seq_len
@@ -735,12 +735,12 @@ class TransformerGenerator(nn.Module):
 		self.PAD_TOKEN = PAD_TOKEN if PAD_TOKEN is not None else output_size-2
 		self.SOS_TOKEN = SOS_TOKEN if SOS_TOKEN is not None else output_size-1
 		# layer definitions
-		self.z2h = nn.Linear(noise_size,hidden_size)
+		self.z2h = nn.utils.spectral_norm(nn.Linear(noise_size,hidden_size))
 		self.embedding = nn.Embedding(output_size,hidden_size,padding_idx=PAD_TOKEN)
 		self.pos_embedding = PositionalEmbedding(max_seq_len+1,hidden_size)
-		self.s2h = nn.Linear(step_input_size,hidden_size)
+		self.s2h = nn.utils.spectral_norm(nn.Linear(step_input_size,hidden_size))
 		self.transformer = TransformerDecoder(output_size,num_layers,hidden_size,num_heads,d_ff=d_ff,dropout_prob=0.1)
-		self.h2o = nn.Linear(hidden_size,output_size)
+		self.h2o = nn.utils.spectral_norm(nn.Linear(hidden_size,output_size))
 		self.activation = activation
 		self.last_activation = GumbelSoftmax()
 		self.beam_width = beam_width
