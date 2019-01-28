@@ -451,7 +451,7 @@ class GumbelSARNNGenerator(nn.Module):
 		return output
 
 class GumbelRelRNNGenerator(nn.Module):
-	def __init__(self,mem_slots,head_size,num_heads,noise_size,output_size,activation=nn.LeakyReLU(0.2),gate_type="memory",dropout_prob=0.2,SOS_TOKEN=None,beam_width=1):
+	def __init__(self,mem_slots,head_size,num_heads,noise_size,output_size,vocab=None,activation=nn.LeakyReLU(0.2),gate_type="memory",dropout_prob=0.2,SOS_TOKEN=None,beam_width=1):
 		super().__init__()
 		# internal variable sizes
 		hidden_size = head_size * num_heads
@@ -463,7 +463,11 @@ class GumbelRelRNNGenerator(nn.Module):
 		self.input_dropout = nn.Dropout(p=dropout_prob)
 		self.z2m = nn.utils.spectral_norm(nn.Linear(noise_size,hidden_size))
 		self.batchnorm1 = nn.BatchNorm1d(hidden_size)
-		self.embedding = nn.Embedding(output_size,hidden_size)
+		if vocab is not None:
+			emb_layer,num_embeddings,embedding_dim = create_emb_layer(vocab)
+			self.embedding = nn.Sequential(emb_layer,nn.utils.spectral_norm(nn.Linear(embedding_dim,hidden_size))) # output shape is [*,embedding_dim] where * is the input shape
+		else:
+			self.embedding = nn.Embedding(output_size,hidden_size)
 		self.batchnorm2 = nn.BatchNorm1d(step_input_size)
 		self.relRNN = RelationalRNNCell(step_input_size,mem_slots=mem_slots,head_size=head_size,num_heads=num_heads,gate_type=gate_type,activation=activation)
 		self.m2o = nn.utils.spectral_norm(nn.Linear(mem_slots*hidden_size,output_size))
@@ -584,7 +588,7 @@ class GumbelRelRNNGenerator(nn.Module):
 		return self.relRNN.initMemory(batch_size)
 
 class MemoryGenerator(nn.Module):
-	def __init__(self,hidden_size,noise_size,output_size,max_seq_len,activation=nn.LeakyReLU(0.2),sim_size=4,similarity=nn.CosineSimilarity(dim=-1),SOS_TOKEN=None,beam_width=1):
+	def __init__(self,hidden_size,noise_size,output_size,max_seq_len,vocab=None,activation=nn.LeakyReLU(0.2),sim_size=4,similarity=nn.CosineSimilarity(dim=-1),SOS_TOKEN=None,beam_width=1):
 		super().__init__()
 		# internal variable sizes
 		self.hidden_size = hidden_size
@@ -593,7 +597,11 @@ class MemoryGenerator(nn.Module):
 		# layer definitions
 		self.z2h = nn.utils.spectral_norm(nn.Linear(noise_size,hidden_size))
 		self.batchnorm1 = nn.BatchNorm1d(hidden_size)
-		self.embedding = nn.Embedding(output_size,hidden_size)
+		if vocab is not None:
+			emb_layer,num_embeddings,embedding_dim = create_emb_layer(vocab)
+			self.embedding = nn.Sequential(emb_layer,nn.utils.spectral_norm(nn.Linear(embedding_dim,hidden_size))) # output shape is [*,embedding_dim] where * is the input shape
+		else:
+			self.embedding = nn.Embedding(output_size,hidden_size)
 		self.batchnorm2 = nn.BatchNorm1d(step_input_size)
 		self.memcell = MemoryCell(step_input_size,hidden_size,sim_size=sim_size,similarity=similarity)
 		self.batchnorm3 = nn.BatchNorm1d(hidden_size)
@@ -726,7 +734,7 @@ class MemoryGenerator(nn.Module):
 		return output
 
 class TransformerGenerator(nn.Module):
-	def __init__(self,hidden_size,num_heads,noise_size,output_size,num_layers,max_seq_len,d_ff=2048,activation=nn.LeakyReLU(0.2),SOS_TOKEN=None,PAD_TOKEN=None,beam_width=1):
+	def __init__(self,hidden_size,num_heads,noise_size,output_size,num_layers,max_seq_len,d_ff=2048,vocab=None,activation=nn.LeakyReLU(0.2),SOS_TOKEN=None,PAD_TOKEN=None,beam_width=1):
 		super().__init__()
 		# internal variable sizes
 		self.hidden_size = hidden_size
@@ -736,7 +744,11 @@ class TransformerGenerator(nn.Module):
 		self.SOS_TOKEN = SOS_TOKEN if SOS_TOKEN is not None else output_size-1
 		# layer definitions
 		self.z2h = nn.utils.spectral_norm(nn.Linear(noise_size,hidden_size))
-		self.embedding = nn.Embedding(output_size,hidden_size,padding_idx=PAD_TOKEN)
+		if vocab is not None:
+			emb_layer,num_embeddings,embedding_dim = create_emb_layer(vocab)
+			self.embedding = nn.Sequential(emb_layer,nn.utils.spectral_norm(nn.Linear(embedding_dim,hidden_size))) # output shape is [*,embedding_dim] where * is the input shape
+		else:
+			self.embedding = nn.Embedding(output_size,hidden_size)
 		self.pos_embedding = PositionalEmbedding(max_seq_len+1,hidden_size)
 		self.s2h = nn.utils.spectral_norm(nn.Linear(step_input_size,hidden_size))
 		self.transformer = TransformerDecoder(output_size,num_layers,hidden_size,num_heads,d_ff=d_ff,dropout_prob=0.1)
