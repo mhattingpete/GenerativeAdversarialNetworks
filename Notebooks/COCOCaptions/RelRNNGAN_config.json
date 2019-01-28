@@ -15,7 +15,7 @@
 		"noise_size":128,
 		"generator":{
 			"name":"GumbelRelRNNGenerator",
-			"mem_slots":4,
+			"mem_slots":8,
 			"head_size":32,
 			"num_heads":4,
 			"beam_width":5,
@@ -35,10 +35,10 @@
 		"discriminator": {
 			"name":"GumbelRelRNNDiscriminator",
 			"hidden_size":32,
-			"rnn_size":128,
+			"rnn_size":64,
 			"optimizer":"Adam",
 			"lr":1e-4,
-			"num_embeddings":64,
+			"num_embeddings":32,
 			"lr_scheduler":{
 				"factor":0.8
 			}

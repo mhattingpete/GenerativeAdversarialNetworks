@@ -11,7 +11,7 @@
 	},
 	"model_config":{
 		"save_name":"MEM-GAN",
-		"batch_size":128,
+		"batch_size":64,
 		"noise_size":128,
 		"generator":{
 			"name":"MemoryGenerator",

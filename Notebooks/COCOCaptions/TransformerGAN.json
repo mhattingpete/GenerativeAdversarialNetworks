@@ -11,12 +11,12 @@
 	},
 	"model_config":{
 		"save_name":"Transformer-GAN",
-		"batch_size":32,
+		"batch_size":64,
 		"noise_size":128,
 		"generator":{
 			"name":"TransformerGenerator",
 			"hidden_size":128,
-			"num_heads":8,
+			"num_heads":4,
 			"num_layers":4,
 			"d_ff":256,
 			"beam_width":5,
