@@ -83,6 +83,8 @@ noise_size = config["model_config"]["noise_size"]
 num_test_samples = 100
 test_noise = sample_noise(num_test_samples,noise_size,device)
 
+vocab = word_to_num_vocab.keys() if config["model_config"]["use_glove"].lower() == "true" else None
+
 # intialize models
 if "hidden_size" not in config["model_config"]["generator"] and "mem_slots" in config["model_config"]["generator"] and \
 "head_size" in config["model_config"]["generator"] and "num_heads" in config["model_config"]["generator"]:
@@ -101,7 +103,7 @@ elif "TransformerGenerator" in config["model_config"]["generator"]["name"]:
 		SOS_TOKEN=SOS_TOKEN,PAD_TOKEN=PAD_TOKEN,beam_width=config["model_config"]["generator"]["beam_width"]).to(device)
 else:
 	generator = getattr(generators,config["model_config"]["generator"]["name"])(hidden_size=config["model_config"]["generator"]["hidden_size"],
-		noise_size=noise_size,output_size=num_classes,SOS_TOKEN=SOS_TOKEN,beam_width=config["model_config"]["generator"]["beam_width"]).to(device)
+		noise_size=noise_size,output_size=num_classes,vocab=vocab,SOS_TOKEN=SOS_TOKEN,beam_width=config["model_config"]["generator"]["beam_width"]).to(device)
 
 multiple_embeddings = "num_embeddings" in config["model_config"]["discriminator"]
 if multiple_embeddings:
