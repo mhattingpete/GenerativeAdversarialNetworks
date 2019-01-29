@@ -17,6 +17,7 @@ import random
 from nltk.translate.bleu_score import sentence_bleu
 
 from utils import onehot,num_parameters,sample_noise,save_model,load_model,tensor_to_list_of_words,RaSGANLoss,WGAN_GPLoss
+from layers import GumbelSoftmax
 from visualize import tensor_to_words
 import generators
 import discriminators
@@ -289,6 +290,8 @@ for ep in range(epochs_pretrain):
 pre_text_log.close()
 text_log = open(os.path.join(summary_path,"log.txt"),"a")
 
+softmax = GumbelSoftmax()
+
 # train adverserially
 while epoch < num_epochs:
 	train_iter = iter(train_data)
@@ -301,8 +304,9 @@ while epoch < num_epochs:
 		num_steps = real_data.size(1)
 		# 1. Train Discriminator
 		real_data_onehot = onehot(real_data,num_classes)
-		real_data_onehot[real_data_onehot==1] = 0.9
-		real_data_onehot[real_data_onehot==0] = (1.0-0.9)/(num_classes-1.0)
+		real_data_onehot[real_data_onehot==1] = 0.7
+		real_data_onehot[real_data_onehot==0] = (1.0-0.7)/(num_classes-1.0)
+		real_data_onehot = softmax(real_data_onehot,temperature)
 
 		# Generate fake data and detach 
 		# (so gradients are not calculated for generator)
