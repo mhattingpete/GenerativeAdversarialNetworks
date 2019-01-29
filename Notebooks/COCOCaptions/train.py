@@ -374,6 +374,7 @@ for n_batch,batch in enumerate(val_iter):
 	nll_gen_error.append(nll_g_error.item())
 
 	# Save sentences for bleu score calculation
+	fake_data = generator(z=noise,num_steps=num_steps,temperature=max_temperature)
 	fake_data_vals = torch.argmax(fake_data,dim=2)
 	fake_data_text = tensor_to_list_of_words(fake_data_vals,num_to_word_vocab)
 	real_data_text = tensor_to_list_of_words(real_data,num_to_word_vocab)
