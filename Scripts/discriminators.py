@@ -192,7 +192,7 @@ class GumbelRNNDiscriminator(nn.Module):
 		self.embedding = nn.utils.spectral_norm(nn.Linear(input_size,hidden_size))
 		self.batchnorm = nn.BatchNorm1d(hidden_size)
 		self.activation = activation
-		self.rnn = nn.utils.spectral_norm(nn.GRU(hidden_size,output_size,batch_first=True))
+		self.rnn = nn.GRU(hidden_size,output_size,batch_first=True)
 
 	def forward(self,x):
 		x = self.batchnorm(self.activation(self.embedding(x)).transpose(2,1)).transpose(1,2)
@@ -209,7 +209,7 @@ class GumbelSARNNDiscriminator(nn.Module):
 		self.attention = SelfAttention(hidden_size,layer_type="conv1d")
 		self.batchnorm2 = nn.BatchNorm1d(hidden_size)
 		self.activation = activation
-		self.rnn = nn.utils.spectral_norm(nn.GRU(hidden_size,output_size,batch_first=True))
+		self.rnn = nn.GRU(hidden_size,output_size,batch_first=True)
 
 	def forward(self,x):
 		x = self.batchnorm1(self.activation(self.embedding(x)).transpose(2,1))
@@ -228,7 +228,7 @@ class GumbelRelRNNDiscriminator(nn.Module):
 		self.batchnorm = nn.BatchNorm1d(hidden_size)
 		self.linear = nn.utils.spectral_norm(nn.Linear(hidden_size,rnn_size))
 		self.activation = activation
-		self.rnn = nn.utils.spectral_norm(nn.GRU(rnn_size,output_size,batch_first=True))
+		self.rnn = nn.GRU(rnn_size,output_size,batch_first=True)
 
 	def forward(self,x):
 		x_embedded = []

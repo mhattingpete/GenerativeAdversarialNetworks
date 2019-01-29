@@ -206,7 +206,7 @@ class GumbelRNNGenerator(nn.Module):
 		else:
 			self.embedding = nn.Embedding(output_size,hidden_size)
 		self.batchnorm2 = nn.BatchNorm1d(step_input_size)
-		self.gru = nn.utils.spectral_norm(nn.GRUCell(step_input_size,hidden_size))
+		self.gru = nn.GRUCell(step_input_size,hidden_size)
 		self.h2o = nn.utils.spectral_norm(nn.Linear(hidden_size,output_size))
 		self.batchnorm3 = nn.BatchNorm1d(hidden_size)
 		self.activation = activation
@@ -336,7 +336,7 @@ class GumbelSARNNGenerator(nn.Module):
 		else:
 			self.embedding = nn.Embedding(output_size,hidden_size)
 		self.batchnorm3 = nn.BatchNorm1d(step_input_size)
-		self.gru = nn.utils.spectral_norm(nn.GRUCell(step_input_size,hidden_size))
+		self.gru = nn.GRUCell(step_input_size,hidden_size)
 		self.h2o = nn.utils.spectral_norm(nn.Linear(hidden_size,output_size))
 		self.batchnorm4 = nn.BatchNorm1d(hidden_size)
 		self.activation = activation

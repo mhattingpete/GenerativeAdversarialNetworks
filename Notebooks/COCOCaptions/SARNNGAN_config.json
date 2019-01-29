@@ -1,5 +1,5 @@
 {
-	"CUDA_VISIBLE_DEVICES":"4",
+	"CUDA_VISIBLE_DEVICES":"3",
 	"train_config":{
 		"num_epochs":200,
 		"epochs_pretrain":100,
@@ -11,7 +11,8 @@
 	},
 	"model_config":{
 		"save_name":"SA-RNN-GAN",
-		"batch_size":64,
+		"use_glove":"false",
+		"batch_size":32,
 		"noise_size":128,
 		"generator":{
 			"name":"GumbelSARNNGenerator",

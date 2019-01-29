@@ -11,7 +11,8 @@
 	},
 	"model_config":{
 		"save_name":"RNN-GAN",
-		"batch_size":64,
+		"use_glove":"false",
+		"batch_size":32,
 		"noise_size":128,
 		"generator":{
 			"name":"GumbelRNNGenerator",

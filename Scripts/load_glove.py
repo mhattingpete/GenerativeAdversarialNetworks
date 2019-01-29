@@ -1,9 +1,10 @@
 import bcolz
 import pickle
+import numpy as np
 
 def load_weight_matrix(target_vocab,emb_dim=50):
 	glove_name = f"6B.{emb_dim}"
-	glove_path = "GloVe"
+	glove_path = "../../Scripts/GloVe"
 	vectors = bcolz.open(f"{glove_path}/{glove_name}.dat")[:]
 	words = pickle.load(open(f"{glove_path}/{glove_name}_words.pkl","rb"))
 	word2idx = pickle.load(open(f"{glove_path}/{glove_name}_idx.pkl","rb"))
@@ -21,7 +22,7 @@ def load_weight_matrix(target_vocab,emb_dim=50):
 
 def create_emb_layer(target_vocab,emb_dim=50,non_trainable=False):
 	assert emb_dim in [50,100,200,300]
-	weights_matrix = load_weight_matrix(emb_dim=emb_dim)
+	weights_matrix = load_weight_matrix(target_vocab,emb_dim=emb_dim)
 	num_embeddings,embedding_dim = weights_matrix.size()
 	emb_layer = nn.Embedding(num_embeddings,embedding_dim)
 	emb_layer.load_state_dict({"weight":weights_matrix})

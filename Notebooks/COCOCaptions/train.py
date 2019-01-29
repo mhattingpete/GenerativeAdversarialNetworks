@@ -120,6 +120,16 @@ else:
 	discriminator = getattr(discriminators,config["model_config"]["discriminator"]["name"])(input_size=num_classes,
 	hidden_size=config["model_config"]["discriminator"]["hidden_size"],output_size=1).to(device)
 
+def weight_init(m):
+	if isinstance(m,nn.Linear) or isinstance(m,nn.Conv1d):
+		nn.init.xavier_uniform_(m.weight.data)
+	elif isinstance(m,nn.GRUCell):
+		nn.init.xavier_uniform_(m.weight_ih.data)
+		nn.init.xavier_uniform_(m.weight_hh.data)
+
+generator.apply(weight_init)
+discriminator.apply(weight_init)
+
 # otpimizers
 g_pre_optimizer = getattr(optim,config["model_config"]["generator"]["optimizer"])(generator.parameters(),lr=g_pre_lr,amsgrad=True)
 g_optimizer = getattr(optim,config["model_config"]["generator"]["optimizer"])(generator.parameters(),lr=g_lr,amsgrad=True)
