@@ -293,52 +293,59 @@ text_log = open(os.path.join(summary_path,"log.txt"),"a")
 softmax = GumbelSoftmax()
 
 # train adverserially
-while epoch < num_epochs:
-	train_iter = iter(train_data)
-	temperature = max_temperature**((epoch+1)/num_epochs)
-	g_lr_scheduler.step()
-	d_lr_scheduler.step()
-	for n_batch,batch in enumerate(train_iter):
-		real_data = batch.text.to(device)
-		N = real_data.size(0)
-		num_steps = real_data.size(1)
-		# 1. Train Discriminator
-		real_data_onehot = onehot(real_data,num_classes)
-		real_data_onehot[real_data_onehot==1] = 0.7
-		real_data_onehot[real_data_onehot==0] = (1.0-0.7)/(num_classes-1.0)
-		real_data_onehot = softmax(real_data_onehot,temperature)
+try:
+	while epoch < num_epochs:
+		train_iter = iter(train_data)
+		temperature = max_temperature**((epoch+1)/num_epochs)
+		g_lr_scheduler.step()
+		d_lr_scheduler.step()
+		for n_batch,batch in enumerate(train_iter):
+			real_data = batch.text.to(device)
+			N = real_data.size(0)
+			num_steps = real_data.size(1)
+			# 1. Train Discriminator
+			real_data_onehot = onehot(real_data,num_classes)
+			real_data_onehot[real_data_onehot==1] = 0.7
+			real_data_onehot[real_data_onehot==0] = (1.0-0.7)/(num_classes-1.0)
+			real_data_onehot = softmax(real_data_onehot,temperature)
 
-		# Generate fake data and detach 
-		# (so gradients are not calculated for generator)
-		noise_tensor = sample_noise(N,noise_size,device)
-		with torch.no_grad():
-			fake_data = generator(z=noise_tensor,num_steps=num_steps,temperature=temperature).detach()
-		# Train D
-		d_error = train_discriminator(discriminator,real_data_onehot,fake_data,d_optimizer)
+			# Generate fake data and detach 
+			# (so gradients are not calculated for generator)
+			noise_tensor = sample_noise(N,noise_size,device)
+			with torch.no_grad():
+				fake_data = generator(z=noise_tensor,num_steps=num_steps,temperature=temperature).detach()
+			# Train D
+			d_error = train_discriminator(discriminator,real_data_onehot,fake_data,d_optimizer)
 
-		# 2. Train Generator every 'gen_train_freq' steps
-		if global_step % gen_train_freq == 0:
-			for _ in range(gen_steps):
-				# Generate fake data
-				noise_tensor = sample_noise(N,noise_size,device)
-				fake_data = generator(z=noise_tensor,num_steps=num_steps,temperature=temperature)
-				# Train G
-				g_error = train_generator(discriminator,real_data_onehot,fake_data,g_optimizer)
-				g_error = g_error.item()
-		global_step += 1
+			# 2. Train Generator every 'gen_train_freq' steps
+			if global_step % gen_train_freq == 0:
+				for _ in range(gen_steps):
+					# Generate fake data
+					noise_tensor = sample_noise(N,noise_size,device)
+					fake_data = generator(z=noise_tensor,num_steps=num_steps,temperature=temperature)
+					# Train G
+					g_error = train_generator(discriminator,real_data_onehot,fake_data,g_optimizer)
+					g_error = g_error.item()
+			global_step += 1
 
-		# Display Progress every few batches
-		if global_step % 50 == 0:
-			dis.add_scalar("epoch",epoch,global_step)
-			dis.add_scalar("g_error",g_error,global_step)
-			dis.add_scalar("d_error",d_error.item(),global_step)
-			dis.add_scalar("beta",temperature.item(),global_step)
-			if epoch % 50 == 0:
-				test_samples = generator(z=test_noise,num_steps=num_steps,temperature=temperature)
-				test_samples_vals = torch.argmax(test_samples,dim=2)
-				test_samples_text = tensor_to_words(test_samples_vals,num_to_word_vocab)
-				text_log.write("Epoch: "+str(epoch)+"\n"+test_samples_text+"\n")
-	epoch += 1
+			# Display Progress every few batches
+			if global_step % 50 == 0:
+				dis.add_scalar("epoch",epoch,global_step)
+				dis.add_scalar("g_error",g_error,global_step)
+				dis.add_scalar("d_error",d_error.item(),global_step)
+				dis.add_scalar("beta",temperature.item(),global_step)
+		if epoch % 50 == 0:
+			test_samples = generator(z=test_noise,num_steps=num_steps,temperature=temperature)
+			test_samples_vals = torch.argmax(test_samples,dim=2)
+			test_samples_text = tensor_to_words(test_samples_vals,num_to_word_vocab)
+			text_log.write("Epoch: "+str(epoch)+"\n"+test_samples_text+"\n")
+		if epoch % 10 == 0:
+			save_model(generator,summary_path)
+			save_model(discriminator,summary_path)
+		epoch += 1
+except:
+	save_model(generator,summary_path)
+	save_model(discriminator,summary_path)
 
 test_samples = generator(z=test_noise,num_steps=num_steps,temperature=temperature)
 test_samples_vals = torch.argmax(test_samples,dim=2)
