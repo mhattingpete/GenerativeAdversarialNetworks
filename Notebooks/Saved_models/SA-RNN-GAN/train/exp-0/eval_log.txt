@@ -1,0 +1,15 @@
+Number of parameters for G: 2470907
+
+
+Got nll_gen mean: 14.232851122729443
+Got 2-gram score: 0.589588701370513
+Got 3-gram score: 0.16797646433254604
+Got 4-gram score: 0.031883311249004176
+Got 5-gram score: 0.003356708146876294Number of parameters for G: 2470907
+
+
+Got nll_gen mean: 14.232544651483286
+Got 2-gram score: 0.5717856539189643
+Got 3-gram score: 0.1670375255903335
+Got 4-gram score: 0.029141640672492385
+Got 5-gram score: 0.004207682746723142Number of parameters for G: 2470907
