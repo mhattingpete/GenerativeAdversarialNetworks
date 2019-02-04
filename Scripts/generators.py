@@ -7,7 +7,7 @@ import gc
 from layers import MultiLayerPerceptron,PixelwiseNormalization,Conv2dEqualized,SelfAttention,GumbelSoftmax,RelationalRNNCell,MemoryCell
 from layers import PositionalEmbedding,TransformerDecoder
 from utils import get_attn_key_pad_mask,get_subsequent_mask,get_non_pad_mask
-from load_glove import create_emb_layer
+#from load_glove import create_emb_layer
 
 #######################################
 #####    Unconditional models     #####
@@ -202,7 +202,7 @@ class GumbelRNNGenerator(nn.Module):
 		self.batchnorm1 = nn.BatchNorm1d(hidden_size)
 		if vocab is not None:
 			emb_layer,num_embeddings,embedding_dim = create_emb_layer(vocab)
-			self.embedding = nn.Sequential(emb_layer,nn.utils.spectral_norm(nn.Linear(embedding_dim,hidden_size))) # output shape is [*,embedding_dim] where * is the input shape
+			self.embedding = nn.Sequential(emb_layer,nn.Linear(embedding_dim,hidden_size)) # output shape is [*,embedding_dim] where * is the input shape
 		else:
 			self.embedding = nn.Embedding(output_size,hidden_size)
 		self.batchnorm2 = nn.BatchNorm1d(step_input_size)

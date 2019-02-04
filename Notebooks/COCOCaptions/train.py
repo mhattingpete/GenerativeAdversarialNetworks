@@ -281,7 +281,7 @@ for ep in range(epochs_pretrain):
 			pretrain_dis.add_scalar("pretrain_g_error",pretrain_g_error.item(),pretrain_step)
 	if use_g_lr_scheduler:
 		pre_g_lr_scheduler.step(torch.stack(batch_error).mean())
-	if ep % 10 == 0:
+	if ep % 5 == 0:
 		test_samples = generator(z=test_noise,num_steps=num_steps,temperature=pretrain_temperature)
 		test_samples_vals = torch.argmax(test_samples,dim=2)
 		test_samples_text = tensor_to_words(test_samples_vals,num_to_word_vocab)
@@ -334,7 +334,7 @@ try:
 				dis.add_scalar("g_error",g_error,global_step)
 				dis.add_scalar("d_error",d_error.item(),global_step)
 				dis.add_scalar("beta",temperature.item(),global_step)
-		if epoch % 50 == 0:
+		if epoch % 20 == 0:
 			test_samples = generator(z=test_noise,num_steps=num_steps,temperature=temperature)
 			test_samples_vals = torch.argmax(test_samples,dim=2)
 			test_samples_text = tensor_to_words(test_samples_vals,num_to_word_vocab)
