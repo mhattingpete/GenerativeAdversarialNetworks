@@ -14,7 +14,6 @@ import numpy as np
 from torch import nn
 import random
 from nltk.translate.bleu_score import sentence_bleu
-from math import ceil
 
 from utils import num_parameters,sample_noise,load_model,tensor_to_list_of_words
 import generators
@@ -105,10 +104,11 @@ def nll_gen(real_data,fake_data):
 	fake_data = torch.log(fake_data+1e-8)
 	for i in range(fake_data.size(1)):
 		loss += pretrain_loss_fun(fake_data[:,i,:],real_data[:,i])
+	loss /= fake_data.size(1)
 	return loss
 
 # evaluate generator
-nll_gen_error = 0
+nll_gen_error = []
 hypothesis_list = []
 reference = []
 for n_batch,batch in enumerate(val_iter):
@@ -122,7 +122,7 @@ for n_batch,batch in enumerate(val_iter):
 						  x=real_data.long())
 	# Calculate nll_gen
 	nll_g_error = nll_gen(real_data,fake_data)
-	nll_gen_error += nll_g_error.item()
+	nll_gen_error.append(nll_g_error.item())
 
 	# Save sentences for bleu score calculation
 	fake_data = generator(z=noise,num_steps=num_steps,temperature=max_temperature)
@@ -132,8 +132,9 @@ for n_batch,batch in enumerate(val_iter):
 	hypothesis_list.extend(fake_data_text)
 	reference.extend(real_data_text)
 
-nll_gen_error = nll_gen_error / ceil(len(val_iter)/batch_size) / max_seq_len
-print(nll_gen_error)
+nll_gen_error = np.array(nll_gen_error)
+nll_gen_error_mean = nll_gen_error.mean()
+print(nll_gen_error_mean)
 
 random.shuffle(hypothesis_list)
 random.shuffle(reference)
@@ -150,7 +151,7 @@ for ngram in range(2,6):
 	if current_bleu < 1e-2:
 		break
 
-text_log.write("\n\nGot nll_gen mean: {}".format(nll_gen_error))
+text_log.write("\n\nGot nll_gen mean: {}".format(nll_gen_error_mean))
 for gram,score in n_gram_bleu_scores.items():
 	text_log.write("\nGot {} score: {}".format(gram,score))
 
