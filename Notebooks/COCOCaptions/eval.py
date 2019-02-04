@@ -90,9 +90,8 @@ loss_weight[PAD_TOKEN] = 0.0
 pretrain_loss_fun = nn.NLLLoss(weight=loss_weight)
 
 np_g = num_parameters(generator)
-np_d = num_parameters(discriminator)
-text_log.write("Number of parameters for G: {}\nNumber of parameters for D: {}\nNumber of parameters in total: {}\n"
-	  .format(np_g,np_d,np_g+np_d))
+text_log.write("Number of parameters for G: {}\n"
+	  .format(np_g))
 
 max_temperature = torch.FloatTensor([config["train_config"]["max_temperature"]]).to(device)
 
