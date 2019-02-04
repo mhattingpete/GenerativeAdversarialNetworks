@@ -11,24 +11,20 @@ with open(sys.argv[1],"rb") as f:
 os.environ["CUDA_VISIBLE_DEVICES"] = config["CUDA_VISIBLE_DEVICES"]
 
 import numpy as np
-from torch import nn,optim
-from tensorboardX import SummaryWriter
+from torch import nn
 import random
 from nltk.translate.bleu_score import sentence_bleu
 
-from utils import onehot,num_parameters,sample_noise,save_model,load_model,tensor_to_list_of_words
-from visualize import tensor_to_words
+from utils import num_parameters,sample_noise,load_model,tensor_to_list_of_words
 import generators
-import discriminators
 
 from Dataloaders.load_coco_captions_dataset import create_dataset
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 model_save_path = os.path.join("../Saved_models",config["model_config"]["save_name"])
-summary_path = os.path.join(model_save_path,"train/exp-{}".format(index))
 
-print("Does model save path exist:",os.path.exists(model_save_path))
+summary_path = os.path.join(model_save_path,"train/exp-0")
 
 print(device)
 
@@ -42,43 +38,63 @@ max_vocab_size = None if "max_vocab_size" not in config["dataset_config"] else c
 Load dataset and prepare for iteration
 """
 data_dict = create_dataset(config["dataset_config"]["path"],batch_size,min_vocab_freq=min_vocab_freq,max_vocab_size=max_vocab_size)
-_,val_data,_ = data_dict["data_iters"]
+train_data,val_data,test_data = data_dict["data_iters"]
+text_field = data_dict["fields"]
 num_classes = data_dict["num_classes"]
 SOS_TOKEN,EOS_TOKEN,UNK_TOKEN,PAD_TOKEN = data_dict["tokens"]
 max_seq_len = data_dict["max_seq_len"]
 num_to_word_vocab = data_dict["num_to_word_vocab"]
+word_to_num_vocab = data_dict["word_to_num_vocab"]
+train_iter = iter(train_data)
 val_iter = iter(val_data)
+test_iter = iter(train_data)
 
+
+"""
+Prepare models
+"""
 noise_size = config["model_config"]["noise_size"]
+
+vocab = word_to_num_vocab.keys() if config["model_config"]["use_glove"].lower() == "true" else None
 
 # intialize models
 if "hidden_size" not in config["model_config"]["generator"] and "mem_slots" in config["model_config"]["generator"] and \
 "head_size" in config["model_config"]["generator"] and "num_heads" in config["model_config"]["generator"]:
 	generator = getattr(generators,config["model_config"]["generator"]["name"])(mem_slots=config["model_config"]["generator"]["mem_slots"],
 		head_size=config["model_config"]["generator"]["head_size"],num_heads=config["model_config"]["generator"]["num_heads"],
-		noise_size=noise_size,output_size=num_classes,SOS_TOKEN=SOS_TOKEN,beam_width=config["model_config"]["generator"]["beam_width"]).to(device)
+		noise_size=noise_size,output_size=num_classes,vocab=vocab,SOS_TOKEN=SOS_TOKEN,beam_width=config["model_config"]["generator"]["beam_width"]).to(device)
 elif "hidden_size" in config["model_config"]["generator"] and "sim_size" in config["model_config"]["generator"] and \
 "similarity" in config["model_config"]["generator"]:
 	generator = getattr(generators,config["model_config"]["generator"]["name"])(hidden_size=config["model_config"]["generator"]["hidden_size"],
 		noise_size=noise_size,output_size=num_classes,max_seq_len=max_seq_len,sim_size=config["model_config"]["generator"]["sim_size"],
-		similarity=getattr(nn,config["model_config"]["generator"]["similarity"])(dim=-1),SOS_TOKEN=SOS_TOKEN,beam_width=config["model_config"]["generator"]["beam_width"]).to(device)
+		similarity=getattr(nn,config["model_config"]["generator"]["similarity"])(dim=-1),vocab=vocab,SOS_TOKEN=SOS_TOKEN,beam_width=config["model_config"]["generator"]["beam_width"]).to(device)
+elif "TransformerGenerator" in config["model_config"]["generator"]["name"]:
+	generator = getattr(generators,config["model_config"]["generator"]["name"])(hidden_size=config["model_config"]["generator"]["hidden_size"],
+		num_heads=config["model_config"]["generator"]["num_heads"],noise_size=noise_size,output_size=num_classes,
+		num_layers=config["model_config"]["generator"]["num_layers"],max_seq_len=max_seq_len,d_ff=config["model_config"]["generator"]["d_ff"],
+		vocab=vocab,SOS_TOKEN=SOS_TOKEN,PAD_TOKEN=PAD_TOKEN,beam_width=config["model_config"]["generator"]["beam_width"]).to(device)
 else:
 	generator = getattr(generators,config["model_config"]["generator"]["name"])(hidden_size=config["model_config"]["generator"]["hidden_size"],
-		noise_size=noise_size,output_size=num_classes,SOS_TOKEN=SOS_TOKEN,beam_width=config["model_config"]["generator"]["beam_width"]).to(device)
+		noise_size=noise_size,output_size=num_classes,vocab=vocab,SOS_TOKEN=SOS_TOKEN,beam_width=config["model_config"]["generator"]["beam_width"]).to(device)
+
+load_model(generator,summary_path)
+
+text_log = open(os.path.join(summary_path,"eval_log.txt"),"a")
 
 # losses
 loss_weight = torch.ones(num_classes).to(device)
 loss_weight[SOS_TOKEN] = 0.0
+#loss_weight[EOS_TOKEN] = 0.0
+#loss_weight[UNK_TOKEN] = 0.0
 loss_weight[PAD_TOKEN] = 0.0
 pretrain_loss_fun = nn.NLLLoss(weight=loss_weight)
 
+np_g = num_parameters(generator)
+np_d = num_parameters(discriminator)
+text_log.write("Number of parameters for G: {}\nNumber of parameters for D: {}\nNumber of parameters in total: {}\n"
+	  .format(np_g,np_d,np_g+np_d))
+
 max_temperature = torch.FloatTensor([config["train_config"]["max_temperature"]]).to(device)
-
-text_log = open(os.path.join(summary_path,"eval.txt"),"a")
-
-# to load model run
-load_model(generator,summary_path)
-
 
 def nll_gen(real_data,fake_data):
 	'''
@@ -104,20 +120,17 @@ for n_batch,batch in enumerate(val_iter):
 	noise = sample_noise(N,noise_size,device)
 	fake_data = generator(z=noise,num_steps=num_steps,temperature=max_temperature,
 						  x=real_data.long())
-	fake_data_gen = generator(z=noise,num_steps=num_steps,temperature=max_temperature)
-
 	# Calculate nll_gen
 	nll_g_error = nll_gen(real_data,fake_data)
 	nll_gen_error.append(nll_g_error.item())
 
 	# Save sentences for bleu score calculation
-	real_data_text = tensor_to_list_of_words(real_data,num_to_word_vocab)
-	reference.extend(real_data_text)
-
-	# Save sentences for bleu score calculation
-	fake_data_vals = torch.argmax(fake_data_gen,dim=2)
+	fake_data = generator(z=noise,num_steps=num_steps,temperature=max_temperature)
+	fake_data_vals = torch.argmax(fake_data,dim=2)
 	fake_data_text = tensor_to_list_of_words(fake_data_vals,num_to_word_vocab)
+	real_data_text = tensor_to_list_of_words(real_data,num_to_word_vocab)
 	hypothesis_list.extend(fake_data_text)
+	reference.extend(real_data_text)
 
 nll_gen_error = np.array(nll_gen_error)
 nll_gen_error_mean = nll_gen_error.mean()

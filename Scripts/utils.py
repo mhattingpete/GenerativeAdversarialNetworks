@@ -24,7 +24,7 @@ def save_model(model,model_save_path):
 
 def load_model(model,model_load_path):
 	try:
-		model.load_state_dict(torch.load(model_load_path))
+		model.load_state_dict(torch.load(os.path.join(model_load_path,model.__class__.__name__)))
 	except Exception:
 		raise
 
