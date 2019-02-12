@@ -15,4 +15,6 @@ All models are only implemented for MNIST because of the lack of computing resso
 ## Text GAN models
 The included models is:
  * [LSTM-GAN](https://arxiv.org/abs/1611.04051)
+ * [SA-LSTM-GAN] Self-attention applied to LSTM-GAN
  * [RelGAN](https://openreview.net/forum?id=rJedV3R5tm)
+ * [Mem-GAN] A learned Memory interation with the LSTM-GAN
